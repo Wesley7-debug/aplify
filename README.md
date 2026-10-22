@@ -9,8 +9,8 @@ A result is only returned when the business has:
 - a **validated public email or a published phone number**, and
 - **no published website**.
 
-Searches are answered from the database in milliseconds. Every search returns
-**10 contacts**. Non-owner visitors can see **10 unique contacts per UTC day**;
+Searches are answered from the database in milliseconds. Every search returns up
+to **10 contacts**. Non-owner visitors can see **10 unique contacts per UTC day**;
 the allowance is tied to the caller's IP address, so clearing local storage or
 cookies does not reset it. The owner email
 (`eugenefidelis573@gmail.com`, configurable with `APLIFY_OWNER_EMAILS`) and
@@ -101,7 +101,7 @@ number.
 
 `GET /api/search?audience=hotels&location=Enugu`
 
-Every search returns 10 contacts. Optional: `user=owner@example.com` identifies
+Every search returns up to 10 contacts. Optional: `user=owner@example.com` identifies
 the owner for the daily-limit exemption, `seen=id,id` only affects ordering.
 The daily allowance and history are keyed by the caller's IP address.
 
