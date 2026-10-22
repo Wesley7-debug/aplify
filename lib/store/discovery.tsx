@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { deviceHeaders } from "@/lib/device-client";
 import type { Lead, RunError, RunStatus, SearchOutcome, SearchQuery, SearchResult } from "@/lib/types";
 
 export type QueryFieldErrors = Partial<Record<"audience" | "location", string>>;
@@ -132,7 +133,7 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
       try {
         const response = await fetch(`/api/search?${params.toString()}`, {
           signal: controller.signal,
-          headers: { Accept: "application/json" },
+          headers: { Accept: "application/json", ...deviceHeaders() },
         });
 
         if (!response.ok) {
@@ -176,7 +177,7 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
         };
         setStatus("error");
         setError({
-          title: failure.outcome === "daily_limit" ? "Daily limit reached" : "Search failed",
+          title: failure.outcome === "daily_limit" ? "Limit reached" : "Search failed",
           message:
             cause instanceof Error ? cause.message : "Something went wrong. Please try again.",
           field: failure.field,

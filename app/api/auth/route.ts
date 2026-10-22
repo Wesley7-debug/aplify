@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isAdminRequest, isOwnerEmail, normalizeUserEmail } from "@/lib/identity";
+import { isAdminRequest, normalizeUserEmail } from "@/lib/identity";
 import {
   USER_COOKIE,
+  USER_DAILY_LIMIT,
   authenticatedEmail,
   createUserToken,
-  dailyLimitFor,
+  ensureDeviceCookie,
+  searchLimitFor,
   userCookieOptions,
 } from "@/lib/user-auth";
 
@@ -13,28 +15,32 @@ const NO_STORE = { "Cache-Control": "no-store" };
 /** Current email session, used by the sign-in gate. */
 export async function GET(request: NextRequest) {
   const email = await authenticatedEmail(request);
+  const admin = await isAdminRequest(request);
+
   if (!email) {
-    return NextResponse.json(
+    const response = NextResponse.json(
       { authenticated: false, error: { message: "Enter your email to continue." } },
       { status: 401, headers: NO_STORE },
     );
+    ensureDeviceCookie(request, response);
+    return response;
   }
 
-  const admin = await isAdminRequest(request);
-  const owner = admin || isOwnerEmail(email);
-  return NextResponse.json(
+  const response = NextResponse.json(
     {
       authenticated: true,
       email,
-      owner,
-      limit: dailyLimitFor(owner),
-      dailyLimit: dailyLimitFor(owner),
+      owner: admin,
+      limit: searchLimitFor(admin),
+      dailyLimit: admin ? null : USER_DAILY_LIMIT,
     },
     { headers: NO_STORE },
   );
+  ensureDeviceCookie(request, response);
+  return response;
 }
 
-/** Sign in with an email address. No password is used on the public site. */
+/** Sign in with an email address. Admin privileges require the /admin login. */
 export async function POST(request: NextRequest) {
   let email = "";
   try {
@@ -52,15 +58,17 @@ export async function POST(request: NextRequest) {
 
   const normalized = normalizeUserEmail(email);
   if (!normalized) {
-    return NextResponse.json(
+    const response = NextResponse.json(
       { error: { message: "Enter a valid email address." } },
       { status: 400, headers: NO_STORE },
     );
+    ensureDeviceCookie(request, response);
+    return response;
   }
 
   const token = await createUserToken(normalized);
   if (!token) {
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         error: {
           message:
@@ -69,27 +77,30 @@ export async function POST(request: NextRequest) {
       },
       { status: 503, headers: NO_STORE },
     );
+    ensureDeviceCookie(request, response);
+    return response;
   }
 
   const admin = await isAdminRequest(request);
-  const owner = admin || isOwnerEmail(normalized);
   const response = NextResponse.json(
     {
       authenticated: true,
       email: normalized,
-      owner,
-      limit: dailyLimitFor(owner),
-      dailyLimit: dailyLimitFor(owner),
+      owner: admin,
+      limit: searchLimitFor(admin),
+      dailyLimit: admin ? null : USER_DAILY_LIMIT,
     },
     { headers: NO_STORE },
   );
   response.cookies.set(USER_COOKIE, token, userCookieOptions());
+  ensureDeviceCookie(request, response);
   return response;
 }
 
-/** Sign out and show the email modal again. */
-export async function DELETE() {
+/** Sign out and show the email modal again. The device limit is not reset. */
+export async function DELETE(request: NextRequest) {
   const response = NextResponse.json({ ok: true }, { headers: NO_STORE });
   response.cookies.set(USER_COOKIE, "", { ...userCookieOptions(), maxAge: 0 });
+  ensureDeviceCookie(request, response);
   return response;
 }

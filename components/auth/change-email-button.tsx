@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { deviceHeaders } from "@/lib/device-client";
 
 /** Clears the signed email cookie so the gate asks for another address. */
 export function ChangeEmailButton() {
@@ -9,7 +10,7 @@ export function ChangeEmailButton() {
   async function change() {
     setBusy(true);
     try {
-      await fetch("/api/auth", { method: "DELETE" });
+      await fetch("/api/auth", { method: "DELETE", headers: deviceHeaders() });
     } finally {
       window.location.reload();
     }

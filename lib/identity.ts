@@ -1,11 +1,12 @@
+import { createHash } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { ADMIN_COOKIE, verifySessionToken } from "@/lib/auth";
-import { DEFAULT_OWNER_EMAIL } from "@/lib/owner";
 
 /**
  * Public-site identity is the email entered in the sign-in modal. It is stored
- * in a signed httpOnly cookie and used as the key for daily limits, contacted
- * businesses and history. Admin password sessions remain separate.
+ * in a signed httpOnly cookie. The free 20-hour limit is checked against the
+ * email, network address and device id together, so changing only one of them
+ * does not reset the allowance. Admin password sessions remain separate.
  */
 
 export function normalizeUserEmail(value: string | null | undefined): string | null {
@@ -15,22 +16,29 @@ export function normalizeUserEmail(value: string | null | undefined): string | n
   return email;
 }
 
-export function ownerEmails(): Set<string> {
-  const configured = process.env.APLIFY_OWNER_EMAILS ?? DEFAULT_OWNER_EMAIL;
-  return new Set(
-    configured
-      .split(",")
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean),
-  );
-}
-
-export function isOwnerEmail(email: string | null): boolean {
-  return Boolean(email && ownerEmails().has(email));
-}
-
 export function emailUserKey(email: string): string {
   return `email:${email}`;
+}
+
+/** Vercel forwards the client address; local development falls back to unknown. */
+export function clientIpFromRequest(request: NextRequest): string {
+  const forwarded = request.headers.get("x-forwarded-for") ?? "";
+  const candidates = [
+    forwarded.split(",")[0],
+    request.headers.get("x-real-ip"),
+    request.headers.get("cf-connecting-ip"),
+  ];
+  for (const candidate of candidates) {
+    const value = (candidate ?? "").trim();
+    if (value) return value.slice(0, 100);
+  }
+  return "unknown";
+}
+
+/** Hashed network key, used alongside email and device id for the free limit. */
+export function ipUserKey(request: NextRequest): string {
+  const digest = createHash("sha256").update(clientIpFromRequest(request)).digest("hex");
+  return `ip:${digest.slice(0, 32)}`;
 }
 
 export async function isAdminRequest(request: NextRequest): Promise<boolean> {

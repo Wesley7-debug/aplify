@@ -1,17 +1,20 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowRight, Loader2, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { deviceHeaders } from "@/lib/device-client";
 
 type GateState = "checking" | "authenticated" | "unauthenticated";
 
 /**
  * Blocks the public site until the visitor enters an email address.
  *
- * The email is kept in a signed httpOnly cookie, never localStorage. The admin
- * dashboard has its own password login and is not gated by this modal.
+ * The email is kept in a signed httpOnly cookie, never localStorage; localStorage
+ * only holds a random device id used for quota. The admin dashboard has its own
+ * password login and is not gated by this modal.
  */
 export function AuthGate({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -24,7 +27,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (isAdmin) return;
     const controller = new AbortController();
-    void fetch("/api/auth", { cache: "no-store", signal: controller.signal })
+    void fetch("/api/auth", {
+      cache: "no-store",
+      signal: controller.signal,
+      headers: deviceHeaders(),
+    })
       .then((response) => setState(response.ok ? "authenticated" : "unauthenticated"))
       .catch(() => {
         if (!controller.signal.aborted) setState("unauthenticated");
@@ -54,7 +61,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     try {
       const response = await fetch("/api/auth", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...deviceHeaders() },
         body: JSON.stringify({ email }),
       });
       const data = (await response.json().catch(() => null)) as
@@ -119,6 +126,17 @@ export function AuthGate({ children }: { children: ReactNode }) {
         >
           Continue
         </Button>
+
+        <p className="mt-3 text-center text-[11px] leading-relaxed text-ink-faint">
+          Admin?{" "}
+          <Link
+            href="/admin/login"
+            className="font-medium text-ink-muted underline underline-offset-2 hover:text-ink"
+          >
+            Sign in with the admin password
+          </Link>{" "}
+          for unlimited searches.
+        </p>
       </form>
     </div>
   );

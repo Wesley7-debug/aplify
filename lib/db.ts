@@ -205,6 +205,8 @@ const SCHEMA = [
   )`,
   `CREATE INDEX IF NOT EXISTS daily_contacts_user
      ON daily_contacts(user_key, day)`,
+  `CREATE INDEX IF NOT EXISTS daily_contacts_window
+     ON daily_contacts(user_key, created_at DESC)`,
 ];
 
 function nowIso(): string {
@@ -1051,15 +1053,33 @@ export async function countRecentSearches(userKey: string, seconds = 60): Promis
   return Number(rows[0]?.n ?? 0);
 }
 
-/** UTC day key, e.g. 2026-10-22. The daily allowance resets at UTC midnight. */
+/** UTC day key, e.g. 2026-10-22. Used for history grouping. */
 export function dailyKey(date = new Date()): string {
   return date.toISOString().slice(0, 10);
 }
 
 /**
- * Unique businesses shown to this user today. Counting unique ids means
- * re-running the same search does not silently burn the daily allowance twice.
+ * The free allowance is a rolling 20-hour window, not a calendar day. Ten
+ * contacts unlocked together therefore re-unlock 20 hours after they were
+ * fetched, regardless of the server's timezone.
  */
+export const QUOTA_WINDOW_HOURS = 20;
+
+/** Unique businesses shown to this key inside the rolling quota window. */
+export async function countWindowContacts(
+  userKey: string,
+  hours = QUOTA_WINDOW_HOURS,
+): Promise<number> {
+  await ensureDb();
+  const since = new Date(Date.now() - Math.max(1, hours) * 60 * 60 * 1_000).toISOString();
+  const rows = await db().query<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM daily_contacts WHERE user_key = ? AND created_at >= ?",
+    [userKey, since],
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
+/** Calendar-day count retained for older callers and history diagnostics. */
 export async function countDailyContacts(userKey: string, day = dailyKey()): Promise<number> {
   await ensureDb();
   const rows = await db().query<{ n: number }>(
@@ -1088,10 +1108,10 @@ export async function recordDailyContacts(
     }
   }
 
-  // Keep only the last 14 days of quota bookkeeping.
+  // Keep only the last 14 days of quota bookkeeping/history.
   const cutoff = dailyKey(new Date(Date.now() - 14 * 24 * 60 * 60 * 1_000));
   await db().run("DELETE FROM daily_contacts WHERE day < ?", [cutoff]);
-  return countDailyContacts(userKey, day);
+  return countWindowContacts(userKey);
 }
 
 export interface HistoryRow extends BusinessDbRow {

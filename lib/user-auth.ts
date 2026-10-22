@@ -1,20 +1,28 @@
-import type { NextRequest } from "next/server";
-import { normalizeUserEmail } from "@/lib/identity";
+import type { NextRequest, NextResponse } from "next/server";
+import { emailUserKey, ipUserKey, normalizeUserEmail } from "@/lib/identity";
 
 /**
- * Email session for the public site.
+ * Email session and device identity for the public site.
  *
- * The browser stores a signed, httpOnly cookie. The email inside it is the key
- * for daily limits, contacted businesses and history, so the same person keeps
- * their allowance even after clearing local storage. The cookie is signed with
- * ADMIN_SESSION_SECRET (or ADMIN_PASSWORD when the former is unset).
+ * The email is stored in a signed, httpOnly cookie. The free limit is checked
+ * against all of: the email, the hashed network address, and the browser device
+ * id (localStorage header plus an httpOnly cookie fallback). That means changing
+ * only the email, or only the device, does not reset the allowance.
+ *
+ * Admin access is handled separately by the /admin password session.
  */
 
 export const USER_COOKIE = "aplify_user";
 export const USER_SESSION_SECONDS = 30 * 24 * 60 * 60;
 
+export const DEVICE_COOKIE = "aplify_device";
+export const DEVICE_MAX_AGE = 365 * 24 * 60 * 60;
+
 export const USER_DAILY_LIMIT = 10;
-export const OWNER_DAILY_LIMIT = 30;
+export const OWNER_SEARCH_LIMIT = 30;
+export const USER_SEARCH_LIMIT = 10;
+
+const VALID_DEVICE = /^[A-Za-z0-9-]{8,64}$/;
 
 function secret(): string {
   return process.env.ADMIN_SESSION_SECRET || process.env.ADMIN_PASSWORD || "";
@@ -104,10 +112,53 @@ export function userCookieOptions() {
   };
 }
 
-export function dailyLimitFor(owner: boolean): number {
-  return owner ? OWNER_DAILY_LIMIT : USER_DAILY_LIMIT;
+function validDeviceId(value: string | null | undefined): string | null {
+  const id = (value ?? "").trim();
+  return VALID_DEVICE.test(id) ? id : null;
+}
+
+/** All device ids on this request. Header and cookie may differ after a reset. */
+export function deviceIdsFromRequest(request: NextRequest): string[] {
+  const ids = new Set<string>();
+  const header = validDeviceId(request.headers.get("x-aplify-device"));
+  const cookie = validDeviceId(request.cookies.get(DEVICE_COOKIE)?.value);
+  if (header) ids.add(header);
+  if (cookie) ids.add(cookie);
+  return [...ids];
+}
+
+export function deviceCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: DEVICE_MAX_AGE,
+  };
+}
+
+/** Ensure a device cookie exists, preferring an existing cookie then the header. */
+export function ensureDeviceCookie(request: NextRequest, response: NextResponse): void {
+  const existing = validDeviceId(request.cookies.get(DEVICE_COOKIE)?.value);
+  const header = validDeviceId(request.headers.get("x-aplify-device"));
+  const id =
+    existing ??
+    header ??
+    (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
+  response.cookies.set(DEVICE_COOKIE, id, deviceCookieOptions());
+}
+
+/** Every key the free quota is checked against for this request. */
+export function quotaKeysFor(request: NextRequest, email: string): string[] {
+  const keys = new Set<string>([emailUserKey(email), ipUserKey(request)]);
+  for (const id of deviceIdsFromRequest(request)) {
+    keys.add(`device:${id}`);
+  }
+  return [...keys];
 }
 
 export function searchLimitFor(owner: boolean): number {
-  return owner ? OWNER_DAILY_LIMIT : USER_DAILY_LIMIT;
+  return owner ? OWNER_SEARCH_LIMIT : USER_SEARCH_LIMIT;
 }

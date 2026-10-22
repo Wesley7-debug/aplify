@@ -122,16 +122,16 @@ export interface SearchResult {
   hint: string | null;
   /** Total businesses with a valid email for this trade/place. */
   total: number;
-  /** Server-computed per-user allowance (10 normally, 30 for the owner). */
+  /** Server-computed per-user allowance (10 normally, unlimited for admin). */
   allowance?: {
     limit: number;
     owner: boolean;
     excludedSeen: number;
-    /** Contacts per UTC day for this email. */
-    dailyLimit: number;
+    /** Null for the unlimited admin session. */
+    dailyLimit: number | null;
     dailyUsed: number;
-    /** Remaining unique contacts today. */
-    dailyRemaining: number;
+    /** Remaining unique contacts in the rolling 20-hour window; null for admin. */
+    dailyRemaining: number | null;
   };
 }
 

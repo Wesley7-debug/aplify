@@ -10,10 +10,11 @@ import {
   Mail,
   Play,
   RefreshCw,
+  Search,
   Square,
   Users,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, LinkButton } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CRAWL_PLACES, CRAWL_TRADES } from "@/lib/crawler/config";
 import { cn } from "@/lib/utils";
@@ -252,7 +253,11 @@ export default function AdminPage() {
             Keep the local database growing — no paid APIs, no request-path crawling.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <LinkButton href="/" variant="primary" size="sm">
+            <Search className="size-3.5" aria-hidden />
+            Search leads
+          </LinkButton>
           <Button variant="secondary" size="sm" icon={<RefreshCw className="size-3.5" />} onClick={() => void refresh()}>
             Refresh stats
           </Button>

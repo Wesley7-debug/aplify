@@ -11,13 +11,19 @@ A result is only returned when the business has:
 
 Searches are answered from the database in milliseconds. Visitors must enter an
 email in a blocking modal before they can search; the email is kept in a signed
-httpOnly cookie, never localStorage. Normal emails get **10 fresh contacts per
-UTC day**, while the configured owner email
-(`eugenefidelis573@gmail.com`, configurable with `APLIFY_OWNER_EMAILS`) and
-signed-in admins get **30**. Every delivered business is stored in
-`seen_businesses`, so neither the same lead nor the same email address is
-returned again — including on later days. Fetched contacts are saved to the
-email's `/history` page.
+httpOnly cookie. A random device id is kept in localStorage and sent as a header,
+with an httpOnly device cookie as a fallback — no usage is stored in localStorage.
+
+Normal visitors get **10 fresh contacts per search** and **10 per rolling 20-hour
+window**. The window is checked against the email, a hashed network address and
+the device id together, so changing only the email, only the device, or only the
+network does not reset the allowance. Admin access is the separate `/admin`
+password session: it is not limited and can return up to **30 per search**.
+Typing an admin email into the public modal does not grant admin rights.
+
+Every delivered business is stored in `seen_businesses`, so neither the same lead
+nor the same email address is returned again — including on later days. Fetched
+contacts are saved to the email's `/history` page.
 
 ## Quick start
 
@@ -89,7 +95,7 @@ TURSO_AUTH_TOKEN=...
 Core tables:
 
 - `businesses` — real OSM/Overture records, normalized place/trade keys, validated email or phone.
-- `daily_contacts` — unique businesses shown to an IP per UTC day (quota + history).
+- `daily_contacts` — unique businesses shown per email/IP/device key; rolling 20-hour quota + history.
 - `seen_businesses` — `(user_key, business_id)` contacted list.
 - `search_events` — short-window rate limiting.
 - `crawl_jobs`, `crawl_cursor` — admin dashboard and resumable discovery.
@@ -102,17 +108,20 @@ number.
 
 `GET /api/search?audience=hotels&location=Enugu`
 
-Requires the email session cookie set by `/api/auth`. The server returns up to 10
-contacts (30 for the owner/admin email), never more than the remaining daily
-allowance. `seen=id,id` only affects ordering. The daily allowance, history and
-contacted list are keyed by the signed-in email.
+Requires the email session cookie set by `/api/auth`. Normal visitors get up to
+10 contacts and admins up to 30 per search, never more than the remaining
+20-hour allowance. `seen=id,id` only affects ordering. History and the contacted
+list are keyed by the signed-in email; the quota takes the maximum usage across
+the email, hashed IP and device keys.
 
 `GET /api/suggestions?kind=trade|location|available&q=...` returns database-backed
 typeaheads. When the typed value has no match, the top available options are
 returned instead.
 
 `GET /api/auth` returns the current email session. `POST /api/auth` signs in with
-an email (no public password). `DELETE /api/auth` signs out.
+an email (no public password). `DELETE /api/auth` signs out without resetting the
+device quota. Admin privileges require signing in at `/admin` with
+`ADMIN_PASSWORD`.
 
 `GET /api/history?days=7` returns the contacts already fetched by this email.
 `GET /api/allowance` reports whether the search button should be enabled.
@@ -127,7 +136,8 @@ Other routes: `GET /api/health`, `/api/locations`, and the protected
 Set `ADMIN_PASSWORD` and open `/admin`. The dashboard shows database totals,
 cities/trades, the last 10 jobs, city/trade filters, live polling, Refresh and
 Stop. Starting a crawl returns immediately with a job id; the work runs in the
-background.
+background. Use **Search leads** in the dashboard to return to the public search;
+the signed admin session makes that browser unlimited.
 
 ## Attribution
 

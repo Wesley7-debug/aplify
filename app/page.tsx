@@ -16,6 +16,7 @@ import { BusinessModal } from "@/components/leads/business-modal";
 import { Combobox, type ComboboxOption } from "@/components/search/combobox";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { deviceHeaders } from "@/lib/device-client";
 import { mailtoHref } from "@/lib/mailto";
 import { useDiscovery } from "@/lib/store/discovery";
 import type { Lead } from "@/lib/types";
@@ -23,9 +24,10 @@ import type { Lead } from "@/lib/types";
 interface AllowanceInfo {
   limit: number;
   owner: boolean;
-  dailyLimit: number;
+  /** Null for the unlimited admin session. */
+  dailyLimit: number | null;
   dailyUsed: number;
-  dailyRemaining: number;
+  dailyRemaining: number | null;
 }
 
 function initialsOf(name: string): string {
@@ -58,7 +60,9 @@ export default function HomePage() {
   const running = status === "running";
   const leads = result?.leads ?? [];
   const fieldError = fieldErrors.audience ?? fieldErrors.location;
-  const limitReached = Boolean(allowance && allowance.dailyRemaining === 0);
+  const limitReached = Boolean(
+    allowance && !allowance.owner && allowance.dailyRemaining === 0,
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -110,7 +114,11 @@ export default function HomePage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetch("/api/allowance", { cache: "no-store", signal: controller.signal })
+    void fetch("/api/allowance", {
+      cache: "no-store",
+      signal: controller.signal,
+      headers: deviceHeaders(),
+    })
       .then(async (response) => {
         if (response.status === 401) {
           window.location.reload();
@@ -185,7 +193,7 @@ export default function HomePage() {
 
         {limitReached ? (
           <p className="mt-2.5 text-center text-[12px] text-ink-muted">
-            Daily limit reached.{" "}
+            You&apos;ve reached your 20-hour limit.{" "}
             <a href="/history" className="font-medium text-accent-700 underline-offset-4 hover:underline">
               View your history
             </a>
@@ -317,7 +325,7 @@ export default function HomePage() {
 
             {limitReached ? (
               <p className="mt-3 text-center text-[11.5px] text-ink-muted">
-                Daily limit reached. Come back tomorrow.
+                You&apos;ve reached your 20-hour limit.
               </p>
             ) : null}
           </>

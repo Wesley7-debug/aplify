@@ -1,22 +1,19 @@
 import { connection, NextRequest, NextResponse } from "next/server";
 import {
-  countDailyContacts,
   countRecentSearches,
   countSeen,
+  countWindowContacts,
   markSeen,
   recordDailyContacts,
   recordSearchEvent,
 } from "@/lib/db";
-import {
-  emailUserKey,
-  isAdminRequest,
-  isOwnerEmail,
-} from "@/lib/identity";
+import { emailUserKey, isAdminRequest } from "@/lib/identity";
 import { runSearch } from "@/lib/search";
 import {
   authenticatedEmail,
-  dailyLimitFor,
+  quotaKeysFor,
   searchLimitFor,
+  USER_DAILY_LIMIT,
 } from "@/lib/user-auth";
 
 /**
@@ -26,12 +23,17 @@ import {
  * Overpass fallback here: a slow network call in the request path is exactly
  * what this architecture removes.
  *
- * The caller must have an email session. Normal users get 10 fresh contacts per
- * search and per UTC day; the configured owner/admin email gets 30. Delivered
- * businesses are marked as seen, so the same lead is never shown again.
+ * Normal visitors get 10 fresh contacts per search. Their free allowance is a
+ * rolling 20-hour window checked against the email, hashed network address and
+ * device id together. Admin access requires the /admin password session and is
+ * not limited. Delivered businesses are marked as seen, so the same lead is
+ * never shown again.
  */
 
 const SEARCHES_PER_MINUTE = 10;
+
+const LIMIT_MESSAGE =
+  "You've reached your 20-hour contact limit. View your history or try again later.";
 
 export async function GET(request: NextRequest) {
   await connection();
@@ -48,20 +50,21 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url);
-  const audience = (searchParams.get("audience") ?? "").trim();
-  const location = (searchParams.get("location") ?? "").trim();
-  const page = Number(searchParams.get("page") ?? "1");
+  const audience = (searchParams.get("audience") ?? "").trim().slice(0, 80);
+  const location = (searchParams.get("location") ?? "").trim().slice(0, 80);
+  const rawPage = Number(searchParams.get("page") ?? "1");
+  const page = Number.isFinite(rawPage) ? Math.max(1, Math.floor(rawPage)) : 1;
 
   if (audience.length < 2) {
     return NextResponse.json(
       { error: { message: "Enter a business type to search for.", field: "audience" } },
-      { status: 400 },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }
   if (location.length < 2) {
     return NextResponse.json(
       { error: { message: "Enter a location to search in.", field: "location" } },
-      { status: 400 },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }
 
@@ -74,14 +77,40 @@ export async function GET(request: NextRequest) {
     .filter(Boolean)
     .slice(0, 300);
 
+  // Admin privileges come from the signed /admin password session, never from
+  // an email address typed into the public modal (which is not proof of identity).
   const admin = await isAdminRequest(request);
-  const owner = admin || isOwnerEmail(email);
   const userKey = emailUserKey(email);
-  const dailyLimit = dailyLimitFor(owner);
-  const searchLimit = searchLimitFor(owner);
+  const searchLimit = searchLimitFor(admin);
 
   try {
-    if (!owner) {
+    const quotaKeys = admin ? [] : quotaKeysFor(request, email);
+    let dailyUsed = 0;
+
+    if (!admin) {
+      const counts = await Promise.all(
+        quotaKeys.map((key) => countWindowContacts(key)),
+      );
+      dailyUsed = Math.max(0, ...counts);
+
+      if (dailyUsed >= USER_DAILY_LIMIT) {
+        return NextResponse.json(
+          {
+            error: { message: LIMIT_MESSAGE },
+            outcome: "daily_limit",
+            allowance: {
+              limit: searchLimit,
+              owner: false,
+              excludedSeen: 0,
+              dailyLimit: USER_DAILY_LIMIT,
+              dailyUsed,
+              dailyRemaining: 0,
+            },
+          },
+          { status: 429, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+
       const recent = await countRecentSearches(userKey, 60);
       if (recent >= SEARCHES_PER_MINUTE) {
         return NextResponse.json(
@@ -91,34 +120,17 @@ export async function GET(request: NextRequest) {
             },
             outcome: "rate_limited",
           },
-          { status: 429, headers: { "Retry-After": "60", "Cache-Control": "no-store" } },
+          {
+            status: 429,
+            headers: { "Retry-After": "60", "Cache-Control": "no-store" },
+          },
         );
       }
     }
 
-    const dailyUsed = await countDailyContacts(userKey);
-    const remainingBefore = Math.max(0, dailyLimit - dailyUsed);
-
-    if (remainingBefore === 0) {
-      return NextResponse.json(
-        {
-          error: {
-            message:
-              "You've reached your daily contact limit. View your history or come back tomorrow.",
-          },
-          outcome: "daily_limit",
-          allowance: {
-            limit: searchLimit,
-            owner,
-            excludedSeen: 0,
-            dailyLimit,
-            dailyUsed,
-            dailyRemaining: 0,
-          },
-        },
-        { status: 429, headers: { "Cache-Control": "no-store" } },
-      );
-    }
+    const remainingBefore = admin
+      ? searchLimit
+      : Math.max(0, USER_DAILY_LIMIT - dailyUsed);
 
     await recordSearchEvent(userKey);
     const seenTotal = await countSeen(userKey);
@@ -127,25 +139,43 @@ export async function GET(request: NextRequest) {
       audience,
       location,
       limit: Math.min(searchLimit, remainingBefore),
-      page: Number.isFinite(page) ? page : 1,
+      page,
       seenIds,
       excludeUserKey: userKey,
       maxLimit: searchLimit,
     });
 
     // Both tables are intentional:
-    // - daily_contacts powers the daily quota and history page.
+    // - daily_contacts powers the rolling quota and the history page.
     // - seen_businesses permanently withholds delivered leads from future runs.
-    const usedAfter = await recordDailyContacts(
-      userKey,
-      result.leads.map((lead) => lead.id),
-    );
+    const leadIds = result.leads.map((lead) => lead.id);
+    if (admin) {
+      // Admin has no quota, but still needs history. Record only the email key
+      // so an admin's usage does not consume a coworker's shared network quota.
+      await recordDailyContacts(userKey, leadIds);
+    } else {
+      // Sequential writes: the local SQLite adapter shares one connection.
+      for (const key of quotaKeys) {
+        await recordDailyContacts(key, leadIds);
+      }
+    }
     await markSeen(
       userKey,
       result.leads.map((lead) => ({ id: lead.id, email: lead.email })),
     );
 
-    const remainingAfter = Math.max(0, dailyLimit - usedAfter);
+    const usedAfter = admin
+      ? 0
+      : Math.max(
+          0,
+          ...(await Promise.all(
+            quotaKeys.map((key) => countWindowContacts(key)),
+          )),
+        );
+    const remainingAfter = admin
+      ? null
+      : Math.max(0, USER_DAILY_LIMIT - usedAfter);
+
     const freshMessage =
       result.leads.length === 0 && seenTotal > 0
         ? "No fresh leads left for this search. Try a different trade or location."
@@ -156,13 +186,13 @@ export async function GET(request: NextRequest) {
       hint: result.leads.length === 0 && seenTotal > 0 ? freshMessage : result.hint,
     };
     const finalResult =
-      remainingAfter === 0
+      !admin && remainingAfter === 0
         ? {
             ...baseResult,
             hasMore: false,
             exhausted: true,
-            message: "Daily limit reached. View your history or come back tomorrow.",
-            hint: "Daily limit reached. View your history or come back tomorrow.",
+            message: LIMIT_MESSAGE,
+            hint: LIMIT_MESSAGE,
           }
         : baseResult;
 
@@ -171,10 +201,10 @@ export async function GET(request: NextRequest) {
         ...finalResult,
         allowance: {
           limit: searchLimit,
-          owner,
+          owner: admin,
           excludedSeen: seenTotal,
-          dailyLimit,
-          dailyUsed: usedAfter,
+          dailyLimit: admin ? null : USER_DAILY_LIMIT,
+          dailyUsed: admin ? 0 : usedAfter,
           dailyRemaining: remainingAfter,
         },
       },
@@ -190,7 +220,7 @@ export async function GET(request: NextRequest) {
         },
         outcome: "service_error",
       },
-      { status: 500 },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
     );
   }
 }
