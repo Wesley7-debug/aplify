@@ -346,7 +346,7 @@ export default function HomePage() {
           >
             CDLA-Permissive 2.0
           </a>
-          ).
+          ). State boundaries by geoBoundaries (CC BY 4.0).
         </p>
         <p>
           NDPR / GDPR:{" "}

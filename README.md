@@ -127,6 +127,7 @@ background.
 ## Attribution
 
 Business data © OpenStreetMap contributors (ODbL 1.0) and Overture Maps
-Foundation contributors (CDLA-Permissive 2.0). Emails and phone numbers are read
-from public records, never guessed. The UI includes an opt-out address and an
-NDPR/GDPR notice; every outreach template includes an unsubscribe instruction.
+Foundation contributors (CDLA-Permissive 2.0). State assignment uses
+geoBoundaries Nigeria ADM1 boundaries (CC BY 4.0). Emails and phone numbers are
+read from public records, never guessed. The UI includes an opt-out address and
+an NDPR/GDPR notice; every outreach template includes an unsubscribe instruction.
