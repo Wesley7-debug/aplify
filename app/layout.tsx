@@ -18,11 +18,11 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Aplify — Find businesses worth emailing",
+    default: "Aplify — Nigerian businesses without a website",
     template: "%s · Aplify",
   },
   description:
-    "Search any trade and market to find businesses with a published contact email. Every result comes with its source and evidence.",
+    "Search real Nigerian businesses with no website and a public email or phone number.",
   applicationName: "Aplify",
   keywords: ["cold outreach", "lead finder", "business email finder", "B2B prospecting"],
 };
@@ -50,6 +50,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <span className="ml-auto hidden text-[12px] text-ink-muted sm:block">
               Find businesses worth emailing
             </span>
+            <a
+              href="/history"
+              className="ml-auto text-[12px] font-medium text-ink-muted transition-colors hover:text-accent-700 sm:ml-0"
+            >
+              History
+            </a>
           </div>
         </header>
         <AppProviders>{children}</AppProviders>

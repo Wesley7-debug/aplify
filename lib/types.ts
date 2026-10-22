@@ -58,7 +58,7 @@ export interface SearchQuery {
   audience: string;
   /** City, region or country. */
   location: string;
-  /** How many contacts to return. 10 for guests, 30 for the owner. */
+  /** How many contacts to return. Fixed at 10 per search. */
   limit: number;
   /** Optional email used for the per-user allowance and contacted list. */
   userEmail?: string;
@@ -80,6 +80,8 @@ export type SearchOutcome =
   | "success"
   | "no_businesses_found"
   | "businesses_found_but_no_public_email"
+  | "daily_limit"
+  | "rate_limited"
   | "service_error";
 
 /** Observable facts about a run, shown in the UI. */
@@ -126,6 +128,11 @@ export interface SearchResult {
     limit: number;
     owner: boolean;
     excludedSeen: number;
+    /** Contacts per UTC day; null for the owner/admin. */
+    dailyLimit: number | null;
+    dailyUsed: number;
+    /** Remaining unique contacts today; null for the owner/admin. */
+    dailyRemaining: number | null;
   };
 }
 

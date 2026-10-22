@@ -196,6 +196,15 @@ const SCHEMA = [
   )`,
   `CREATE INDEX IF NOT EXISTS search_events_user
      ON search_events(user_key, created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS daily_contacts (
+    user_key TEXT NOT NULL,
+    day TEXT NOT NULL,
+    business_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (user_key, day, business_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS daily_contacts_user
+     ON daily_contacts(user_key, day)`,
 ];
 
 function nowIso(): string {
@@ -1041,6 +1050,74 @@ export async function countRecentSearches(userKey: string, seconds = 60): Promis
     [userKey, since],
   );
   return Number(rows[0]?.n ?? 0);
+}
+
+/** UTC day key, e.g. 2026-10-22. The daily allowance resets at UTC midnight. */
+export function dailyKey(date = new Date()): string {
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Unique businesses shown to this user today. Counting unique ids means
+ * re-running the same search does not silently burn the daily allowance twice.
+ */
+export async function countDailyContacts(userKey: string, day = dailyKey()): Promise<number> {
+  await ensureDb();
+  const rows = await db().query<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM daily_contacts WHERE user_key = ? AND day = ?",
+    [userKey, day],
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
+export async function recordDailyContacts(
+  userKey: string,
+  businessIds: string[],
+  day = dailyKey(),
+): Promise<number> {
+  await ensureDb();
+  const ids = [...new Set(businessIds.map((id) => id.trim()).filter(Boolean))];
+  if (ids.length > 0) {
+    const createdAt = nowIso();
+    const statements: Statement[] = ids.map((id) => ({
+      sql: `INSERT OR IGNORE INTO daily_contacts (user_key, day, business_id, created_at)
+            VALUES (?, ?, ?, ?)`,
+      args: [userKey, day, id, createdAt],
+    }));
+    for (let index = 0; index < statements.length; index += 500) {
+      await db().batch(statements.slice(index, index + 500));
+    }
+  }
+
+  // Keep only the last 14 days of quota bookkeeping.
+  const cutoff = dailyKey(new Date(Date.now() - 14 * 24 * 60 * 60 * 1_000));
+  await db().run("DELETE FROM daily_contacts WHERE day < ?", [cutoff]);
+  return countDailyContacts(userKey, day);
+}
+
+export interface HistoryRow extends BusinessDbRow {
+  day: string;
+  shown_at: string;
+}
+
+/** The contacts already fetched by this user key, newest first. */
+export async function listDailyContacts(
+  userKey: string,
+  days = 7,
+  limit = 200,
+): Promise<HistoryRow[]> {
+  await ensureDb();
+  const windowDays = Math.max(1, Math.min(days, 14));
+  const cutoff = dailyKey(new Date(Date.now() - (windowDays - 1) * 24 * 60 * 60 * 1_000));
+  return db().query<HistoryRow>(
+    `SELECT b.*, d.day AS day, d.created_at AS shown_at
+     FROM daily_contacts d
+     JOIN businesses b ON b.id = d.business_id
+     WHERE d.user_key = ? AND d.day >= ?
+     ORDER BY d.day DESC, d.created_at DESC, b.name COLLATE NOCASE ASC
+     LIMIT ?`,
+    [userKey, cutoff, Math.max(1, Math.min(limit, 500))],
+  );
 }
 
 export async function recordSearchEvent(userKey: string): Promise<void> {

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { ADMIN_COOKIE, verifySessionToken } from "@/lib/auth";
 import { DEFAULT_OWNER_EMAIL } from "@/lib/owner";
@@ -5,13 +6,11 @@ import { DEFAULT_OWNER_EMAIL } from "@/lib/owner";
 /**
  * Lightweight identity for the public search page.
  *
- * Nobody has to sign up. A stable httpOnly cookie identifies an anonymous
- * browser, and an optional email identifies a person across devices. Admin
- * sessions and the configured owner email are exempt from the guest cap.
+ * The public allowance, contacted list and history are keyed by the caller's IP
+ * address. That cannot be reset by clearing local storage or cookies. An
+ * optional email only identifies the configured owner, and admin sessions are
+ * exempt from the daily cap.
  */
-
-export const UID_COOKIE = "aplify_uid";
-export const UID_MAX_AGE = 365 * 24 * 60 * 60;
 
 export function normalizeUserEmail(value: string | null | undefined): string | null {
   const email = (value ?? "").trim().toLowerCase();
@@ -39,18 +38,29 @@ export async function isAdminRequest(request: NextRequest): Promise<boolean> {
   return verifySessionToken(token);
 }
 
-export function uidFromRequest(request: NextRequest): string | null {
-  const value = request.cookies.get(UID_COOKIE)?.value ?? "";
-  if (!/^[0-9a-f-]{16,64}$/i.test(value)) return null;
-  return value;
+/**
+ * The public allowance is tied to the caller's network address. Vercel forwards
+ * the client address in `x-forwarded-for`; `x-real-ip` and Cloudflare's header
+ * cover the other common proxies. Local development falls back to `unknown`.
+ */
+export function clientIpFromRequest(request: NextRequest): string {
+  const forwarded = request.headers.get("x-forwarded-for") ?? "";
+  const candidates = [
+    forwarded.split(",")[0],
+    request.headers.get("x-real-ip"),
+    request.headers.get("cf-connecting-ip"),
+  ];
+  for (const candidate of candidates) {
+    const value = (candidate ?? "").trim();
+    if (value) return value.slice(0, 100);
+  }
+  return "unknown";
 }
 
-export function userKeyFor(options: {
-  email: string | null;
-  uid: string | null;
-  admin: boolean;
-}): string {
-  if (options.email) return `email:${options.email}`;
-  if (options.admin) return "admin";
-  return `anon:${options.uid ?? "no-cookie"}`;
+/** Stable per-IP key used for daily quotas, contacted lists and history. */
+export function ipUserKey(request: NextRequest): string {
+  // Store a one-way digest rather than the raw address.
+  const digest = createHash("sha256").update(clientIpFromRequest(request)).digest("hex");
+  return `ip:${digest.slice(0, 32)}`;
 }
+

@@ -8,9 +8,7 @@ import type { EmailSource, Lead, SearchResult } from "@/lib/types";
  * are whatever the crawler has already collected, returned in milliseconds.
  */
 
-export const MAX_LIMIT = 30;
-/** Everyone except the owner gets at most 10 contacts per request. */
-export const USER_MAX_LIMIT = 10;
+export const MAX_LIMIT = 10;
 
 export function clampLimit(value: number, max = MAX_LIMIT): number {
   return Math.min(Math.max(Math.round(value || 10), 1), max);

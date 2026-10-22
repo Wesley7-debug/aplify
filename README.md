@@ -9,11 +9,14 @@ A result is only returned when the business has:
 - a **validated public email or a published phone number**, and
 - **no published website**.
 
-Searches are answered from the database in milliseconds. Guests get up to
-**10 contacts per search** and **10 searches per minute**. The owner email
-(`eugenefidelis573@gmail.com`, configurable with `APLIFY_OWNER_EMAILS`) gets up
-to 30. A business a user contacts is stored in the `seen_businesses` table and is
-never returned to that user again.
+Searches are answered from the database in milliseconds. Every search returns
+**10 contacts**. Non-owner visitors can see **10 unique contacts per UTC day**;
+the allowance is tied to the caller's IP address, so clearing local storage or
+cookies does not reset it. The owner email
+(`eugenefidelis573@gmail.com`, configurable with `APLIFY_OWNER_EMAILS`) and
+signed-in admins are exempt from the daily cap. Fetched contacts are saved for
+the IP and shown on `/history`. A business a user contacts is stored in the
+`seen_businesses` table and is never returned to that network again.
 
 ## Quick start
 
@@ -31,7 +34,9 @@ upserted by their source id.
 
 The Overture import uses DuckDB to read the free, public Overture Maps places
 parquet files. It keeps only Nigerian businesses with a phone number or email
-and no published website, then DNS-validates any emails. No API key is needed.
+and no published website, assigns coordinates to Nigeria's 36 states + FCT using
+the openly licensed geoBoundaries polygons, then balances the seed across every
+state. No API key is needed.
 
 To import OSM instead (larger download, fewer contact details):
 
@@ -83,6 +88,7 @@ TURSO_AUTH_TOKEN=...
 Core tables:
 
 - `businesses` — real OSM/Overture records, normalized place/trade keys, validated email or phone.
+- `daily_contacts` — unique businesses shown to an IP per UTC day (quota + history).
 - `seen_businesses` — `(user_key, business_id)` contacted list.
 - `search_events` — short-window rate limiting.
 - `crawl_jobs`, `crawl_cursor` — admin dashboard and resumable discovery.
@@ -93,18 +99,20 @@ number.
 
 ## Search API
 
-`GET /api/search?audience=hotels&location=Enugu&limit=10&page=1`
+`GET /api/search?audience=hotels&location=Enugu`
 
-Optional: `user=you@example.com` (allowance + contacted list), `seen=id,id`
-(client-side ordering only).
+Every search returns 10 contacts. Optional: `user=owner@example.com` identifies
+the owner for the daily-limit exemption, `seen=id,id` only affects ordering.
+The daily allowance and history are keyed by the caller's IP address.
 
 `GET /api/suggestions?kind=trade|location|available&q=...` returns database-backed
 typeaheads. When the typed value has no match, the top available options are
 returned instead.
 
-`POST /api/seen` marks a business as contacted. `DELETE /api/seen` clears the
-caller's contacted list. Identity is an optional email plus an httpOnly
-anonymous cookie.
+`GET /api/history?days=7` returns the contacts already fetched by this IP.
+`GET /api/allowance?user=owner@example.com` reports whether the search button
+should be enabled. `POST /api/seen` marks a business as contacted;
+`DELETE /api/seen` clears the caller's contacted list. Identity is the request IP.
 
 Other routes: `GET /api/health`, `/api/locations`, and the protected
 `/api/admin/*` routes.

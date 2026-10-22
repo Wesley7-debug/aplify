@@ -10,24 +10,21 @@ import {
   Phone,
   RotateCcw,
   Search,
-  Sparkles,
 } from "lucide-react";
 import { BusinessModal } from "@/components/leads/business-modal";
 import { Combobox, type ComboboxOption } from "@/components/search/combobox";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { mailtoHref } from "@/lib/mailto";
-import { isDefaultOwnerEmail } from "@/lib/owner";
 import { useDiscovery } from "@/lib/store/discovery";
-import { cn } from "@/lib/utils";
-import type { Lead, SearchDiagnostics } from "@/lib/types";
+import type { Lead } from "@/lib/types";
 
-const EMAIL_PRESETS = [5, 10, 20, 30];
-
-interface AvailableSearch {
-  audience: string;
-  location: string;
-  hint: string;
+interface AllowanceInfo {
+  limit: number;
+  owner: boolean;
+  dailyLimit: number | null;
+  dailyUsed: number;
+  dailyRemaining: number | null;
 }
 
 function initialsOf(name: string): string {
@@ -40,23 +37,29 @@ function initialsOf(name: string): string {
 }
 
 export default function HomePage() {
-  const { query, patchQuery, fieldErrors, status, result, error, seenCount, loadingMore, run, runQuery, loadMore, resetSeen, markContacted } =
-    useDiscovery();
+  const {
+    query,
+    patchQuery,
+    fieldErrors,
+    status,
+    result,
+    error,
+    seenCount,
+    run,
+    resetSeen,
+    markContacted,
+  } = useDiscovery();
   const [selected, setSelected] = useState<Lead | null>(null);
   const [tradeOptions, setTradeOptions] = useState<ComboboxOption[]>([]);
   const [locationOptions, setLocationOptions] = useState<ComboboxOption[]>([]);
   const [tradeLoading, setTradeLoading] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
-  const [available, setAvailable] = useState<AvailableSearch[]>([]);
+  const [allowance, setAllowance] = useState<AllowanceInfo | null>(null);
 
   const running = status === "running";
   const leads = result?.leads ?? [];
-  const diagnostics = result?.diagnostics ?? error?.diagnostics ?? null;
   const fieldError = fieldErrors.audience ?? fieldErrors.location;
-  const ownerPreview = isDefaultOwnerEmail(query.userEmail);
-  const maxLimit = ownerPreview ? 30 : 10;
-  const limit = Math.min(Math.max(query.limit || 10, 1), maxLimit);
-  const audience = result?.query.audience ?? query.audience;
+  const limitReached = Boolean(allowance && !allowance.owner && allowance.dailyRemaining === 0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -108,31 +111,32 @@ export default function HomePage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetch("/api/suggestions?kind=available&limit=8", { signal: controller.signal })
-      .then(async (response) => (await response.json()) as { suggestions?: AvailableSearch[] })
-      .then((data) => setAvailable(data.suggestions ?? []))
+    const params = new URLSearchParams();
+    if (query.userEmail?.trim()) params.set("user", query.userEmail.trim());
+    void fetch(`/api/allowance?${params.toString()}`, { signal: controller.signal })
+      .then(async (response) => (await response.json()) as AllowanceInfo)
+      .then((data) => setAllowance(data))
       .catch(() => undefined);
     return () => controller.abort();
-  }, []);
+  }, [query.userEmail, status]);
 
   return (
     <div id="main" className="mx-auto w-full max-w-2xl px-4 py-10 sm:py-14">
       <section className="text-center">
         <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-balance text-ink">
-          Find businesses worth emailing
+          Find businesses without a website
         </h1>
         <p className="mx-auto mt-2.5 max-w-md text-[14px] leading-relaxed text-ink-muted">
-          Search any trade and market. Every result is a real business with no website and a
-          validated email or phone number.
+          Real Nigerian businesses with a public email or phone number.
         </p>
       </section>
 
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          void run();
+          if (!limitReached) void run();
         }}
-        className="mt-8"
+        className="mt-7"
       >
         <div className="rounded-2xl border border-line bg-surface p-2 shadow-card">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-0">
@@ -141,7 +145,7 @@ export default function HomePage() {
               value={query.audience}
               onChange={(value) => patchQuery({ audience: value })}
               options={tradeOptions}
-              placeholder="Business type — dentists…"
+              placeholder="Trade — dentist…"
               ariaLabel="Business type"
               icon={<Building2 className="size-4" />}
               loading={tradeLoading}
@@ -153,7 +157,7 @@ export default function HomePage() {
               value={query.location}
               onChange={(value) => patchQuery({ location: value })}
               options={locationOptions}
-              placeholder="Location — London…"
+              placeholder="State or city — Lagos…"
               ariaLabel="Location"
               icon={<MapPin className="size-4" />}
               loading={locationLoading}
@@ -165,67 +169,29 @@ export default function HomePage() {
               size="md"
               loading={running}
               icon={running ? undefined : <Search className="size-4" />}
-              disabled={running}
+              disabled={running || limitReached}
               className="w-full sm:ml-1 sm:w-auto"
             >
               Search
             </Button>
           </div>
 
-          <div className="mt-1 flex flex-wrap items-center justify-between gap-3 border-t border-line px-2 pt-3 pb-1 sm:px-3">
-            <label className="flex items-center gap-2 text-[12px] text-ink-muted">
-              Contacts to return
-              <input
-                type="number"
-                min={1}
-                max={maxLimit}
-                value={limit}
-                onChange={(event) => {
-                  const next = Number(event.target.value);
-                  if (!Number.isFinite(next)) return;
-                  patchQuery({ limit: Math.min(Math.max(Math.round(next), 1), maxLimit) });
-                }}
-                aria-label="Number of contacts to return"
-                className="h-8 w-14 rounded-lg border border-line-strong bg-surface text-center text-[13px] font-semibold text-ink outline-none focus:border-accent-500 focus:ring-2 focus:ring-accent-100"
-              />
-              <span className="text-ink-faint">max {maxLimit}</span>
-            </label>
-
-            <div className="flex items-center gap-1.5">
-              {EMAIL_PRESETS.filter((preset) => preset <= maxLimit).map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() => patchQuery({ limit: preset })}
-                  className={cn(
-                    "h-7 min-w-8 rounded-full border px-2.5 text-[11px] font-medium transition-colors",
-                    limit === preset
-                      ? "border-accent-300 bg-accent-50 text-accent-700"
-                      : "border-line bg-surface text-ink-muted hover:border-line-strong hover:text-ink",
-                  )}
-                >
-                  {preset}
-                </button>
-              ))}
-            </div>
-          </div>
-
           <div className="mt-1 flex flex-wrap items-center justify-between gap-2 border-t border-line px-2 pt-2.5 pb-1 sm:px-3">
             <label className="flex min-w-0 flex-1 items-center gap-2 text-[12px] text-ink-muted">
-              Your email
+              Owner email
               <input
                 type="email"
                 value={query.userEmail ?? ""}
                 onChange={(event) => patchQuery({ userEmail: event.target.value })}
-                placeholder="you@example.com"
+                placeholder="owner@example.com"
                 autoComplete="email"
                 maxLength={254}
                 className="h-8 min-w-0 flex-1 rounded-lg border border-line-strong bg-surface px-2.5 text-[12px] text-ink outline-none placeholder:text-ink-faint focus:border-accent-500 focus:ring-2 focus:ring-accent-100 sm:max-w-56"
               />
             </label>
-            <span className="text-[11px] text-ink-faint">
-              {ownerPreview ? "Owner · up to 30 per search" : "10 per search · contacted businesses are hidden"}
-            </span>
+            {limitReached ? (
+              <span className="text-[11px] font-medium text-danger-600">Daily limit reached</span>
+            ) : null}
           </div>
         </div>
 
@@ -238,32 +204,15 @@ export default function HomePage() {
 
       <section className="mt-7">
         {status === "idle" ? (
-          <div className="grid place-items-center rounded-2xl border border-dashed border-line-strong bg-surface px-6 py-14 text-center">
-            <span className="mb-3 grid size-11 place-items-center rounded-xl bg-accent-50 text-accent-600">
-              <Search className="size-5" />
-            </span>
-            <h2 className="text-sm font-semibold text-ink">Start with a search</h2>
-            <p className="mt-1 max-w-xs text-[13px] leading-relaxed text-ink-muted">
-              Type a trade and pick a location — suggestions come from businesses already in the
-              database.
-            </p>
-            <AvailableSuggestions
-              items={available}
-              onPick={(nextAudience, nextLocation) => void runQuery(nextAudience, nextLocation)}
-            />
-          </div>
+          <p className="py-12 text-center text-[13px] text-ink-muted">
+            Search a trade and a state or city to begin.
+          </p>
         ) : null}
 
         {running && leads.length === 0 ? (
           <Card className="overflow-hidden">
-            <div className="flex items-center gap-3 border-b border-line px-5 py-4">
-              <Sparkles className="size-4 animate-shimmer text-accent-600" aria-hidden />
-              <p className="text-[13px] font-medium text-ink" role="status">
-                Searching real businesses…
-              </p>
-            </div>
             <ul className="divide-y divide-line">
-              {Array.from({ length: 5 }).map((_, index) => (
+              {Array.from({ length: 4 }).map((_, index) => (
                 <li key={index} className="flex items-center gap-3 px-5 py-3.5">
                   <div className="size-9 animate-pulse rounded-xl bg-surface-sunken" />
                   <div className="flex-1 space-y-2">
@@ -286,23 +235,17 @@ export default function HomePage() {
             <p className="mx-auto mt-1 max-w-sm text-[13px] leading-relaxed text-ink-muted">
               {error.message}
             </p>
-            {error.diagnostics &&
-            (error.diagnostics.businessesFound > 0 ||
-              error.diagnostics.websitesChecked > 0 ||
-              error.diagnostics.sourcesTried.length > 0) ? (
-              <div className="mt-3">
-                <DiagnosticsLine diagnostics={error.diagnostics} audience={audience} />
-              </div>
-            ) : null}
-            <Button
-              variant="secondary"
-              size="sm"
-              className="mt-4"
-              icon={<RotateCcw className="size-3.5" />}
-              onClick={() => void run()}
-            >
-              Try again
-            </Button>
+            {error.outcome === "daily_limit" ? null : (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="mt-4"
+                icon={<RotateCcw className="size-3.5" />}
+                onClick={() => void run()}
+              >
+                Try again
+              </Button>
+            )}
           </div>
         ) : null}
 
@@ -311,73 +254,20 @@ export default function HomePage() {
             <span className="mb-3 grid size-11 place-items-center rounded-xl bg-surface-sunken text-ink-muted">
               <Inbox className="size-5" />
             </span>
-            <h2 className="text-sm font-semibold text-ink">
-              {result.outcome === "businesses_found_but_no_public_email"
-                ? "Businesses found — no public email"
-                : "No businesses found"}
-            </h2>
+            <h2 className="text-sm font-semibold text-ink">No matches</h2>
             <p className="mt-1 max-w-sm text-[13px] leading-relaxed text-ink-muted">
-              {result.message ??
-                "Nothing matched that search. Map coverage varies by place — try a nearby city or a broader trade."}
+              Try another trade, or a different state or city.
             </p>
-            {diagnostics ? (
-              <div className="mt-3">
-                <DiagnosticsLine diagnostics={diagnostics} audience={audience} />
-              </div>
-            ) : null}
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-              {seenCount > 0 ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  icon={<RotateCcw className="size-3.5" />}
-                  onClick={() => void resetSeen()}
-                >
-                  Reset seen ({seenCount})
-                </Button>
-              ) : null}
-            </div>
-            <AvailableSuggestions
-              items={available}
-              onPick={(nextAudience, nextLocation) => void runQuery(nextAudience, nextLocation)}
-            />
           </div>
         ) : null}
 
         {leads.length > 0 ? (
           <>
-            <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-2 px-1">
+            <div className="mb-2.5 px-1">
               <p className="text-[13px] font-semibold text-ink">
                 {leads.length} {leads.length === 1 ? "business" : "businesses"}
-                {leads.length < limit ? (
-                  <span className="ml-2 font-normal text-ink-muted">(asked for {limit})</span>
-                ) : null}
               </p>
-              {running ? (
-                <span className="flex items-center gap-1.5 text-[11.5px] font-medium text-accent-700">
-                  <Sparkles className="size-3.5 animate-shimmer" aria-hidden />
-                  Still searching…
-                </span>
-              ) : (
-                <p className="text-[11.5px] text-ink-muted">Click a name for details</p>
-              )}
             </div>
-
-            {diagnostics ? (
-              <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 px-1">
-                <DiagnosticsLine diagnostics={diagnostics} audience={audience} />
-                {seenCount > 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => void resetSeen()}
-                    className="flex items-center gap-1 text-[11px] font-medium text-ink-muted transition-colors hover:text-accent-700"
-                  >
-                    <RotateCcw className="size-3" aria-hidden />
-                    Reset seen ({seenCount})
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
 
             <Card className="overflow-hidden">
               <ul className="divide-y divide-line">
@@ -427,42 +317,27 @@ export default function HomePage() {
               </ul>
             </Card>
 
-            {result?.hasMore ? (
-              <div className="mt-3 flex justify-center">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  loading={loadingMore}
-                  onClick={() => void loadMore()}
-                  disabled={loadingMore}
-                >
-                  Load more results
-                </Button>
-              </div>
-            ) : null}
-
-            {!running && result?.message ? (
-              <p className="mt-2.5 px-1 text-[11.5px] leading-relaxed text-ink-muted">
-                {result.message}
+            {limitReached ? (
+              <p className="mt-3 text-center text-[11.5px] text-ink-muted">
+                Daily limit reached. Come back tomorrow.
               </p>
             ) : null}
           </>
         ) : null}
       </section>
 
-      <footer className="mt-8 space-y-2 text-center text-[11px] leading-relaxed text-ink-faint">
+      <footer className="mt-8 space-y-1.5 text-center text-[11px] leading-relaxed text-ink-faint">
         <p>
-          Business data © OpenStreetMap contributors and Overture Maps Foundation contributors,
-          available under the{" "}
+          Data © OpenStreetMap contributors (
           <a
             href="https://opendatacommons.org/licenses/odbl/1-0/"
             target="_blank"
             rel="noreferrer noopener"
             className="underline underline-offset-2 hover:text-ink-muted"
           >
-            ODbL licence
-          </a>{" "}
-          and{" "}
+            ODbL
+          </a>
+          ) and Overture Maps (
           <a
             href="https://cdla.dev/permissive-2-0/"
             target="_blank"
@@ -471,86 +346,33 @@ export default function HomePage() {
           >
             CDLA-Permissive 2.0
           </a>
-          . Emails and phone numbers are read from public records, never guessed.
+          ).
         </p>
         <p>
-          NDPR / GDPR: addresses are processed for legitimate business contact only. If you own a
-          listed business you can request access, correction or removal at{" "}
+          NDPR / GDPR:{" "}
           <a
             href="mailto:privacy@aplify.app?subject=Remove%20my%20business%20listing"
             className="underline underline-offset-2 hover:text-ink-muted"
           >
             privacy@aplify.app
-          </a>
-          . Every outreach template also includes an unsubscribe instruction.
+          </a>{" "}
+          to correct or remove a listing.
+          {seenCount > 0 ? (
+            <>
+              {" · "}
+              <button
+                type="button"
+                onClick={() => void resetSeen()}
+                className="underline underline-offset-2 hover:text-ink-muted"
+              >
+                Reset seen ({seenCount})
+              </button>
+            </>
+          ) : null}
         </p>
       </footer>
 
       <BusinessModal lead={selected} onClose={() => setSelected(null)} />
     </div>
-  );
-}
-
-function AvailableSuggestions({
-  items,
-  onPick,
-}: {
-  items: AvailableSearch[];
-  onPick: (audience: string, location: string) => void;
-}) {
-  if (items.length === 0) return null;
-
-  return (
-    <div className="mt-5 w-full">
-      <p className="text-[11px] font-semibold tracking-[0.08em] text-ink-faint uppercase">
-        Available in the database
-      </p>
-      <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-        {items.map((item) => (
-          <button
-            key={`${item.audience}-${item.location}`}
-            type="button"
-            onClick={() => onPick(item.audience, item.location)}
-            title={item.hint}
-            className="rounded-full border border-line bg-surface px-2.5 py-1 text-[11.5px] font-medium text-ink-soft transition-colors hover:border-accent-300 hover:bg-accent-50 hover:text-accent-700"
-          >
-            {item.audience} · {item.location}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function DiagnosticsLine({
-  diagnostics,
-  audience,
-}: {
-  diagnostics: SearchDiagnostics;
-  audience: string;
-}) {
-  const trade = (audience || "businesses").toLowerCase();
-  const sources = diagnostics.sourcesTried;
-  const via = sources.includes("database")
-    ? "the local Aplify database"
-    : sources.includes("snapshot")
-      ? sources.includes("osm-live")
-        ? "snapshot + live map data"
-        : "snapshot"
-      : sources.length > 0
-        ? "live map data"
-        : null;
-
-  return (
-    <p className="text-[11.5px] leading-relaxed text-ink-muted">
-      Found <span className="font-semibold text-ink-soft">{diagnostics.businessesFound}</span>{" "}
-      {trade} · {diagnostics.withWebsite} with a website ·{" "}
-      {diagnostics.websitesChecked} websites checked ·{" "}
-      <span className="font-semibold text-ink-soft">{diagnostics.withEmail}</span> contacts
-      {via ? <span className="text-ink-faint"> · via {via}</span> : null}
-      {diagnostics.mirrorsFailed > 0 ? (
-        <span className="text-ink-faint"> · {diagnostics.mirrorsFailed} mirror requests failed</span>
-      ) : null}
-    </p>
   );
 }

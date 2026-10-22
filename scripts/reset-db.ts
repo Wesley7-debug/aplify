@@ -18,6 +18,7 @@ try {
 }
 
 const TABLES = [
+  "daily_contacts",
   "seen_businesses",
   "search_events",
   "crawl_jobs",
@@ -64,10 +65,9 @@ async function resetTurso(): Promise<void> {
     const result = await client.execute(`SELECT COUNT(*) AS n FROM ${table}`).catch(() => null);
     before[table] = Number(result?.rows[0]?.n ?? 0);
   }
-  await client.batch(
-    TABLES.map((table) => ({ sql: `DELETE FROM ${table}`, args: [] })),
-    "write",
-  );
+  for (const table of TABLES) {
+    await client.execute(`DELETE FROM ${table}`).catch(() => null);
+  }
   const after: Record<string, number> = {};
   for (const table of TABLES) {
     const result = await client.execute(`SELECT COUNT(*) AS n FROM ${table}`).catch(() => null);

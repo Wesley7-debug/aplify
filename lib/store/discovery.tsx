@@ -9,13 +9,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { usePersistentState } from "@/hooks/use-persistent-state";
-import type { Lead, RunError, RunStatus, SearchQuery, SearchResult } from "@/lib/types";
+import type { Lead, RunError, RunStatus, SearchOutcome, SearchQuery, SearchResult } from "@/lib/types";
 
 export type QueryFieldErrors = Partial<Record<"audience" | "location", string>>;
 
-const QUERY_STORAGE_KEY = "aplify.query.v1";
-const SEEN_STORAGE_KEY = "aplify.seen.v1";
 const EMPTY_QUERY: SearchQuery = { audience: "", location: "", limit: 10, userEmail: "" };
 
 const MAX_SEEN_TOKENS = 600;
@@ -66,14 +63,13 @@ function rememberSeen(map: SeenMap, key: string, tokens: string[]): SeenMap {
 
 interface ApiError {
   error?: { message?: string; field?: "audience" | "location" };
+  outcome?: SearchOutcome;
 }
 
 export function DiscoveryProvider({ children }: { children: ReactNode }) {
-  const [query, setQuery, hydrated] = usePersistentState<SearchQuery>(
-    QUERY_STORAGE_KEY,
-    EMPTY_QUERY,
-  );
-  const [seen, setSeen] = usePersistentState<SeenMap>(SEEN_STORAGE_KEY, {});
+  const [query, setQuery] = useState<SearchQuery>(EMPTY_QUERY);
+  const [seen, setSeen] = useState<SeenMap>({});
+  const hydrated = true;
   const [status, setStatus] = useState<RunStatus>("idle");
   const [result, setResult] = useState<SearchResult | null>(null);
   const [error, setError] = useState<RunError | null>(null);
@@ -145,8 +141,9 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
           const data = (await response.json().catch(() => null)) as ApiError | null;
           const failure = new Error(
             data?.error?.message ?? "The search could not be completed.",
-          ) as Error & { field?: "audience" | "location" };
+          ) as Error & { field?: "audience" | "location"; outcome?: SearchOutcome };
           failure.field = data?.error?.field;
+          failure.outcome = data?.outcome;
           throw failure;
         }
 
@@ -171,13 +168,17 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
         }
       } catch (cause) {
         if (controller.signal.aborted) return;
-        const failure = cause as Error & { field?: "audience" | "location" };
+        const failure = cause as Error & {
+          field?: "audience" | "location";
+          outcome?: SearchOutcome;
+        };
         setStatus("error");
         setError({
-          title: "Search failed",
+          title: failure.outcome === "daily_limit" ? "Daily limit reached" : "Search failed",
           message:
             cause instanceof Error ? cause.message : "Something went wrong. Please try again.",
           field: failure.field,
+          outcome: failure.outcome,
         });
       } finally {
         if (append) setLoadingMore(false);

@@ -1,16 +1,18 @@
-import { randomUUID } from "node:crypto";
 import { connection, NextRequest, NextResponse } from "next/server";
-import { countRecentSearches, getSeenIds, recordSearchEvent } from "@/lib/db";
 import {
+  countDailyContacts,
+  countRecentSearches,
+  getSeenIds,
+  recordDailyContacts,
+  recordSearchEvent,
+} from "@/lib/db";
+import {
+  ipUserKey,
   isAdminRequest,
   isOwnerEmail,
   normalizeUserEmail,
-  UID_COOKIE,
-  UID_MAX_AGE,
-  uidFromRequest,
-  userKeyFor,
 } from "@/lib/identity";
-import { MAX_LIMIT, USER_MAX_LIMIT, runSearch } from "@/lib/search";
+import { runSearch } from "@/lib/search";
 
 /**
  * Database-backed search.
@@ -19,12 +21,14 @@ import { MAX_LIMIT, USER_MAX_LIMIT, runSearch } from "@/lib/search";
  * Overpass fallback here: a slow network call in the request path is exactly
  * what this architecture removes.
  *
- * Guests are capped at 10 contacts per request and 10 requests per minute. The
- * owner email (and any signed-in admin) keeps the full cap. Businesses that
- * have already been emailed by this user are filtered out server-side.
+ * Every search returns 10 contacts. The public daily allowance is tied to the
+ * caller's IP address so it cannot be reset by clearing local storage or
+ * cookies. The owner email and signed-in admins are exempt from the daily cap.
  */
 
 const GUEST_SEARCHES_PER_MINUTE = 10;
+const DAILY_CONTACT_LIMIT = 10;
+const SEARCH_RESULT_LIMIT = 10;
 
 export async function GET(request: NextRequest) {
   await connection();
@@ -32,7 +36,6 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const audience = (searchParams.get("audience") ?? "").trim();
   const location = (searchParams.get("location") ?? "").trim();
-  const limit = Number(searchParams.get("limit") ?? "10");
   const page = Number(searchParams.get("page") ?? "1");
 
   if (audience.length < 2) {
@@ -60,16 +63,13 @@ export async function GET(request: NextRequest) {
   const userEmail = normalizeUserEmail(searchParams.get("user"));
   const admin = await isAdminRequest(request);
   const owner = admin || isOwnerEmail(userEmail);
-
-  const existingUid = uidFromRequest(request);
-  const uid = existingUid ?? randomUUID();
-  const userKey = userKeyFor({ email: userEmail, uid, admin });
+  const userKey = ipUserKey(request);
 
   try {
     if (!owner) {
       const recent = await countRecentSearches(userKey, 60);
       if (recent >= GUEST_SEARCHES_PER_MINUTE) {
-        const limited = NextResponse.json(
+        return NextResponse.json(
           {
             error: {
               message: "Too many searches. Please wait a minute and try again.",
@@ -78,9 +78,29 @@ export async function GET(request: NextRequest) {
           },
           { status: 429, headers: { "Retry-After": "60", "Cache-Control": "no-store" } },
         );
-        attachUid(limited, existingUid, uid);
-        return limited;
       }
+    }
+
+    const dailyUsed = owner ? 0 : await countDailyContacts(userKey);
+
+    if (!owner && dailyUsed >= DAILY_CONTACT_LIMIT) {
+      return NextResponse.json(
+        {
+          error: {
+            message: "You've reached your daily contact limit. View your history or come back tomorrow.",
+          },
+          outcome: "daily_limit",
+          allowance: {
+            limit: SEARCH_RESULT_LIMIT,
+            owner: false,
+            excludedSeen: 0,
+            dailyLimit: DAILY_CONTACT_LIMIT,
+            dailyUsed,
+            dailyRemaining: 0,
+          },
+        },
+        { status: 429, headers: { "Cache-Control": "no-store" } },
+      );
     }
 
     await recordSearchEvent(userKey);
@@ -89,53 +109,58 @@ export async function GET(request: NextRequest) {
     const result = await runSearch({
       audience,
       location,
-      limit: Number.isFinite(limit) ? limit : 10,
+      limit: SEARCH_RESULT_LIMIT,
       page: Number.isFinite(page) ? page : 1,
       seenIds,
       excludeIds,
-      maxLimit: owner ? MAX_LIMIT : USER_MAX_LIMIT,
+      maxLimit: SEARCH_RESULT_LIMIT,
     });
 
-    const response = NextResponse.json(
+    // Record the fetched businesses so they appear on the IP's history page.
+    const usedAfter = await recordDailyContacts(
+      userKey,
+      result.leads.map((lead) => lead.id),
+    );
+    const remainingAfter = owner
+      ? null
+      : Math.max(0, DAILY_CONTACT_LIMIT - usedAfter);
+
+    const finalResult =
+      remainingAfter === 0
+        ? {
+            ...result,
+            hasMore: false,
+            exhausted: true,
+            message: "Daily limit reached. View your history or come back tomorrow.",
+            hint: "Daily limit reached. View your history or come back tomorrow.",
+          }
+        : result;
+
+    return NextResponse.json(
       {
-        ...result,
-        // The client can show the real allowance without a separate request.
+        ...finalResult,
         allowance: {
-          limit: owner ? MAX_LIMIT : USER_MAX_LIMIT,
+          limit: SEARCH_RESULT_LIMIT,
           owner,
           excludedSeen: excludeIds.length,
+          dailyLimit: owner ? null : DAILY_CONTACT_LIMIT,
+          dailyUsed: owner ? 0 : usedAfter,
+          dailyRemaining: remainingAfter,
         },
       },
       { headers: { "Cache-Control": "no-store" } },
     );
-    attachUid(response, existingUid, uid);
-    return response;
   } catch (cause) {
     console.error("[search] database error", cause);
     return NextResponse.json(
       {
         error: {
           message:
-            "The local business database is unavailable right now. Check that data/aplify.db is writable, or your Turso credentials.",
+            "The business database is unavailable right now. Please try again shortly.",
         },
         outcome: "service_error",
       },
       { status: 500 },
     );
   }
-}
-
-function attachUid(
-  response: NextResponse,
-  existing: string | null,
-  uid: string,
-): void {
-  if (existing) return;
-  response.cookies.set(UID_COOKIE, uid, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: UID_MAX_AGE,
-  });
 }
