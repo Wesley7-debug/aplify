@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Clock3, History, Mail, Phone } from "lucide-react";
+import { Clock3, History } from "lucide-react";
 import { ChangeEmailButton } from "@/components/auth/change-email-button";
 import { BusinessModal } from "@/components/leads/business-modal";
+import { LeadRow } from "@/components/leads/lead-row";
 import { Card } from "@/components/ui/card";
-import { mailtoHref } from "@/lib/mailto";
 import { useDiscovery } from "@/lib/store/discovery";
 import type { Lead } from "@/lib/types";
 
@@ -26,15 +26,6 @@ function dayLabel(day: string): string {
     month: "short",
     day: "numeric",
   });
-}
-
-function initialsOf(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join("");
 }
 
 export default function HistoryPage() {
@@ -141,52 +132,14 @@ export default function HistoryPage() {
               </h2>
               <Card className="overflow-hidden">
                 <ul className="divide-y divide-line">
-                  {dayItems.map((item) => {
-                    const lead = item.lead;
-                    return (
-                      <li
-                        key={`${item.day}-${lead.id}`}
-                        className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-muted sm:px-5"
-                      >
-                        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-accent-50 text-[12px] font-bold text-accent-700">
-                          {initialsOf(lead.businessName)}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setSelected(lead)}
-                          className="min-w-0 flex-1 text-left"
-                        >
-                          <span className="block truncate text-[14px] font-semibold text-ink transition-colors group-hover:text-accent-700">
-                            {lead.businessName}
-                          </span>
-                          <span className="mt-0.5 block truncate text-[12px] text-ink-muted">
-                            {lead.category} · {lead.location.display}
-                          </span>
-                        </button>
-                        {lead.email ? (
-                          <a
-                            href={mailtoHref(lead)}
-                            onClick={() => void markContacted(lead)}
-                            aria-label={`Email ${lead.businessName}`}
-                            title={lead.email}
-                            className="grid size-9 shrink-0 place-items-center rounded-lg border border-line-strong bg-surface text-ink-muted shadow-card transition-colors hover:border-accent-300 hover:bg-accent-50 hover:text-accent-700"
-                          >
-                            <Mail className="size-4" />
-                          </a>
-                        ) : lead.phone ? (
-                          <a
-                            href={`tel:${lead.phone}`}
-                            onClick={() => void markContacted(lead)}
-                            aria-label={`Call ${lead.businessName}`}
-                            title={lead.phone}
-                            className="grid size-9 shrink-0 place-items-center rounded-lg border border-line-strong bg-surface text-ink-muted shadow-card transition-colors hover:border-accent-300 hover:bg-accent-50 hover:text-accent-700"
-                          >
-                            <Phone className="size-4" />
-                          </a>
-                        ) : null}
-                      </li>
-                    );
-                  })}
+                  {dayItems.map((item) => (
+                    <LeadRow
+                      key={`${item.day}-${item.lead.id}`}
+                      lead={item.lead}
+                      onSelect={setSelected}
+                      onContact={(lead) => void markContacted(lead)}
+                    />
+                  ))}
                 </ul>
               </Card>
             </section>

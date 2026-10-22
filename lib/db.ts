@@ -1139,6 +1139,30 @@ export async function listDailyContacts(
   );
 }
 
+/**
+ * The exact contacts from the most recent fetch. Every row inserted for one
+ * search shares the same `created_at`, so this restores the last result set on
+ * the home page after a reload without exposing another email's history.
+ */
+export async function listLatestContactBatch(
+  userKey: string,
+  limit = 30,
+): Promise<HistoryRow[]> {
+  await ensureDb();
+  return db().query<HistoryRow>(
+    `SELECT b.*, d.day AS day, d.created_at AS shown_at
+     FROM daily_contacts d
+     JOIN businesses b ON b.id = d.business_id
+     WHERE d.user_key = ?
+       AND d.created_at = (
+         SELECT MAX(created_at) FROM daily_contacts WHERE user_key = ?
+       )
+     ORDER BY b.name COLLATE NOCASE ASC
+     LIMIT ?`,
+    [userKey, userKey, Math.max(1, Math.min(limit, 50))],
+  );
+}
+
 export async function recordSearchEvent(userKey: string): Promise<void> {
   await ensureDb();
   const now = nowIso();

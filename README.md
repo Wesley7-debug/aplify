@@ -23,7 +23,8 @@ Typing an admin email into the public modal does not grant admin rights.
 
 Every delivered business is stored in `seen_businesses`, so neither the same lead
 nor the same email address is returned again — including on later days. Fetched
-contacts are saved to the email's `/history` page.
+contacts are saved to the email's `/history` page, and the home page restores the
+last fetched batch after a reload or full navigation.
 
 ## Quick start
 
@@ -97,7 +98,7 @@ Core tables:
 - `businesses` — real OSM/Overture records, normalized place/trade keys, validated email or phone.
 - `daily_contacts` — unique businesses shown per email/IP/device key; rolling 20-hour quota + history.
 - `seen_businesses` — `(user_key, business_id)` contacted list.
-- `search_events` — short-window rate limiting.
+- `search_events` — short-window rate limiting per email/IP/device.
 - `crawl_jobs`, `crawl_cursor` — admin dashboard and resumable discovery.
 
 `email_validated_at` is set only after syntax, junk and DNS checks pass. Invalid
@@ -124,7 +125,9 @@ device quota. Admin privileges require signing in at `/admin` with
 `ADMIN_PASSWORD`.
 
 `GET /api/history?days=7` returns the contacts already fetched by this email.
-`GET /api/allowance` reports whether the search button should be enabled.
+`GET /api/recent` returns the batch from the most recent fetch, used to restore
+the home page after a reload. `GET /api/allowance` reports whether the search
+button should be enabled.
 `POST /api/seen` records a contacted lead. Delivered leads are marked as seen
 automatically and are not recycled.
 

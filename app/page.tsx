@@ -1,23 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
   Building2,
   Inbox,
-  Mail,
   MapPin,
-  Phone,
   RotateCcw,
   Search,
 } from "lucide-react";
 import { ChangeEmailButton } from "@/components/auth/change-email-button";
 import { BusinessModal } from "@/components/leads/business-modal";
+import { LeadRow } from "@/components/leads/lead-row";
 import { Combobox, type ComboboxOption } from "@/components/search/combobox";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { deviceHeaders } from "@/lib/device-client";
-import { mailtoHref } from "@/lib/mailto";
 import { useDiscovery } from "@/lib/store/discovery";
 import type { Lead } from "@/lib/types";
 
@@ -30,13 +29,20 @@ interface AllowanceInfo {
   dailyRemaining: number | null;
 }
 
-function initialsOf(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join("");
+interface RecentItem {
+  day: string;
+  shownAt: string;
+  lead: Lead;
+}
+
+function fetchedLabel(value: string): string {
+  const elapsed = Date.now() - new Date(value).getTime();
+  if (!Number.isFinite(elapsed) || elapsed < 60_000) return "just now";
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 export default function HomePage() {
@@ -56,6 +62,8 @@ export default function HomePage() {
   const [tradeLoading, setTradeLoading] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
   const [allowance, setAllowance] = useState<AllowanceInfo | null>(null);
+  const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
+  const [recentLoading, setRecentLoading] = useState(true);
 
   const running = status === "running";
   const leads = result?.leads ?? [];
@@ -133,6 +141,29 @@ export default function HomePage() {
     return () => controller.abort();
   }, [status]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/recent", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (response.status === 401) {
+          window.location.reload();
+          return [];
+        }
+        const data = (await response.json()) as {
+          items?: RecentItem[];
+          error?: { message?: string };
+        };
+        if (!response.ok) throw new Error(data.error?.message ?? "Could not restore results.");
+        return data.items ?? [];
+      })
+      .then((items) => setRecentItems(items))
+      .catch(() => undefined)
+      .finally(() => {
+        if (!controller.signal.aborted) setRecentLoading(false);
+      });
+    return () => controller.abort();
+  }, []);
+
   return (
     <div id="main" className="mx-auto w-full max-w-2xl px-4 py-10 sm:py-14">
       <section className="text-center">
@@ -194,9 +225,9 @@ export default function HomePage() {
         {limitReached ? (
           <p className="mt-2.5 text-center text-[12px] text-ink-muted">
             You&apos;ve reached your 20-hour limit.{" "}
-            <a href="/history" className="font-medium text-accent-700 underline-offset-4 hover:underline">
+            <Link href="/history" className="font-medium text-accent-700 underline-offset-4 hover:underline">
               View your history
-            </a>
+            </Link>
             .
           </p>
         ) : null}
@@ -209,7 +240,44 @@ export default function HomePage() {
       </form>
 
       <section className="mt-7">
-        {status === "idle" ? (
+        {status === "idle" && recentLoading ? (
+          <p className="py-12 text-center text-[13px] text-ink-muted">
+            Restoring your last results…
+          </p>
+        ) : null}
+
+        {status === "idle" && !recentLoading && recentItems.length > 0 ? (
+          <>
+            <div className="mb-2.5 flex items-end justify-between gap-3 px-1">
+              <div>
+                <p className="text-[13px] font-semibold text-ink">Your last fetched contacts</p>
+                <p className="mt-0.5 text-[11.5px] text-ink-faint">
+                  Fetched {fetchedLabel(recentItems[0]?.shownAt ?? "")}
+                </p>
+              </div>
+              <Link
+                href="/history"
+                className="shrink-0 text-[12px] font-medium text-accent-700 underline-offset-4 hover:underline"
+              >
+                View history
+              </Link>
+            </div>
+            <Card className="overflow-hidden">
+              <ul className="divide-y divide-line">
+                {recentItems.map((item) => (
+                  <LeadRow
+                    key={item.lead.id}
+                    lead={item.lead}
+                    onSelect={setSelected}
+                    onContact={(lead) => void markContacted(lead)}
+                  />
+                ))}
+              </ul>
+            </Card>
+          </>
+        ) : null}
+
+        {status === "idle" && !recentLoading && recentItems.length === 0 ? (
           <p className="py-12 text-center text-[13px] text-ink-muted">
             Search a trade and a state or city to begin.
           </p>
@@ -278,47 +346,12 @@ export default function HomePage() {
             <Card className="overflow-hidden">
               <ul className="divide-y divide-line">
                 {leads.map((lead) => (
-                  <li
+                  <LeadRow
                     key={lead.id}
-                    className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-muted sm:px-5"
-                  >
-                    <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-accent-50 text-[12px] font-bold text-accent-700">
-                      {initialsOf(lead.businessName)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setSelected(lead)}
-                      className="min-w-0 flex-1 text-left"
-                    >
-                      <span className="block truncate text-[14px] font-semibold text-ink transition-colors group-hover:text-accent-700">
-                        {lead.businessName}
-                      </span>
-                      <span className="mt-0.5 block truncate text-[12px] text-ink-muted">
-                        {lead.category} · {lead.location.display}
-                      </span>
-                    </button>
-                    {lead.email ? (
-                      <a
-                        href={mailtoHref(lead)}
-                        onClick={() => void markContacted(lead)}
-                        aria-label={`Email ${lead.businessName}`}
-                        title={lead.email}
-                        className="grid size-9 shrink-0 place-items-center rounded-lg border border-line-strong bg-surface text-ink-muted shadow-card transition-colors hover:border-accent-300 hover:bg-accent-50 hover:text-accent-700"
-                      >
-                        <Mail className="size-4" />
-                      </a>
-                    ) : lead.phone ? (
-                      <a
-                        href={`tel:${lead.phone}`}
-                        onClick={() => void markContacted(lead)}
-                        aria-label={`Call ${lead.businessName}`}
-                        title={lead.phone}
-                        className="grid size-9 shrink-0 place-items-center rounded-lg border border-line-strong bg-surface text-ink-muted shadow-card transition-colors hover:border-accent-300 hover:bg-accent-50 hover:text-accent-700"
-                      >
-                        <Phone className="size-4" />
-                      </a>
-                    ) : null}
-                  </li>
+                    lead={lead}
+                    onSelect={setSelected}
+                    onContact={(selectedLead) => void markContacted(selectedLead)}
+                  />
                 ))}
               </ul>
             </Card>

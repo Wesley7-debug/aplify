@@ -111,7 +111,12 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      const recent = await countRecentSearches(userKey, 60);
+      // Rate-limit the same keys as the quota so changing the email cannot
+      // bypass it. Admin sessions skip every limiter.
+      const recentCounts = await Promise.all(
+        quotaKeys.map((key) => countRecentSearches(key, 60)),
+      );
+      const recent = Math.max(0, ...recentCounts);
       if (recent >= SEARCHES_PER_MINUTE) {
         return NextResponse.json(
           {
@@ -132,7 +137,14 @@ export async function GET(request: NextRequest) {
       ? searchLimit
       : Math.max(0, USER_DAILY_LIMIT - dailyUsed);
 
-    await recordSearchEvent(userKey);
+    if (admin) {
+      await recordSearchEvent(userKey);
+    } else {
+      // Sequential writes: the local SQLite adapter shares one connection.
+      for (const key of quotaKeys) {
+        await recordSearchEvent(key);
+      }
+    }
     const seenTotal = await countSeen(userKey);
 
     const result = await runSearch({
