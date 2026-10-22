@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { CrawlAlreadyRunningError, getActiveCrawl, startCrawl } from "@/lib/crawler";
 import { getRunningJob } from "@/lib/db";
 
-export const maxDuration = 900;
+export const maxDuration = 300;
 
 /** Start a background crawl. Returns the job id immediately. */
 export async function POST(request: Request) {
