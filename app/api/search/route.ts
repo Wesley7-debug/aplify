@@ -19,7 +19,7 @@ import { MAX_LIMIT, USER_MAX_LIMIT, runSearch } from "@/lib/search";
  * Overpass fallback here: a slow network call in the request path is exactly
  * what this architecture removes.
  *
- * Guests are capped at 10 emails per request and 10 requests per minute. The
+ * Guests are capped at 10 contacts per request and 10 requests per minute. The
  * owner email (and any signed-in admin) keeps the full cap. Businesses that
  * have already been emailed by this user are filtered out server-side.
  */

@@ -452,7 +452,8 @@ export default function HomePage() {
 
       <footer className="mt-8 space-y-2 text-center text-[11px] leading-relaxed text-ink-faint">
         <p>
-          Business data © OpenStreetMap contributors, available under the{" "}
+          Business data © OpenStreetMap contributors and Overture Maps Foundation contributors,
+          available under the{" "}
           <a
             href="https://opendatacommons.org/licenses/odbl/1-0/"
             target="_blank"
@@ -460,6 +461,15 @@ export default function HomePage() {
             className="underline underline-offset-2 hover:text-ink-muted"
           >
             ODbL licence
+          </a>{" "}
+          and{" "}
+          <a
+            href="https://cdla.dev/permissive-2-0/"
+            target="_blank"
+            rel="noreferrer noopener"
+            className="underline underline-offset-2 hover:text-ink-muted"
+          >
+            CDLA-Permissive 2.0
           </a>
           . Emails and phone numbers are read from public records, never guessed.
         </p>

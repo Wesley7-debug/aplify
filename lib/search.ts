@@ -9,7 +9,7 @@ import type { EmailSource, Lead, SearchResult } from "@/lib/types";
  */
 
 export const MAX_LIMIT = 30;
-/** Everyone except the owner gets at most 10 emails per request. */
+/** Everyone except the owner gets at most 10 contacts per request. */
 export const USER_MAX_LIMIT = 10;
 
 export function clampLimit(value: number, max = MAX_LIMIT): number {
@@ -26,7 +26,9 @@ function displayOf(row: BusinessDbRow): string {
 
 function emailSourceOf(row: BusinessDbRow): EmailSource | null {
   if (!row.email) return null;
-  return row.email_source === "osm" ? "osm-tag" : "website-text";
+  if (row.email_source === "osm") return "osm-tag";
+  if (row.email_source === "overture") return "overture";
+  return "website-text";
 }
 
 export function leadFromRow(row: BusinessDbRow): Lead | null {
@@ -34,6 +36,7 @@ export function leadFromRow(row: BusinessDbRow): Lead | null {
   const phone = row.phone?.trim() || null;
   if (!email && !phone) return null;
 
+  const overture = row.id.startsWith("overture/");
   const confidence = email
     ? assessConfidence(email, {
         phone: Boolean(row.phone),
@@ -68,9 +71,9 @@ export function leadFromRow(row: BusinessDbRow): Lead | null {
     // Results are restricted to businesses without a published website.
     website: null,
     source: {
-      name: "OpenStreetMap",
+      name: overture ? "Overture Maps" : "OpenStreetMap",
       url: row.source_url,
-      license: "ODbL 1.0",
+      license: overture ? "CDLA-Permissive 2.0" : "ODbL 1.0",
       retrievedAt: row.updated_at,
     },
   };

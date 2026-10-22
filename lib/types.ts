@@ -10,7 +10,7 @@
 export type ConfidenceLevel = "high" | "medium" | "low";
 
 /** Where the email was read from. We never guess or generate addresses. */
-export type EmailSource = "osm-tag" | "website-mailto" | "website-text";
+export type EmailSource = "osm-tag" | "overture" | "website-mailto" | "website-text";
 
 export interface LeadLocation {
   city: string | null;
@@ -58,7 +58,7 @@ export interface SearchQuery {
   audience: string;
   /** City, region or country. */
   location: string;
-  /** How many emails to return. 10 for guests, 30 for the owner. */
+  /** How many contacts to return. 10 for guests, 30 for the owner. */
   limit: number;
   /** Optional email used for the per-user allowance and contacted list. */
   userEmail?: string;

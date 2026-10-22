@@ -12,6 +12,7 @@ import type { EmailSource, Lead } from "@/lib/types";
 
 const EMAIL_SOURCE_LABELS: Record<EmailSource, string> = {
   "osm-tag": "Published on OpenStreetMap",
+  overture: "Published in Overture Maps",
   "website-mailto": "Business website · mailto link",
   "website-text": "Business website · page text",
 };

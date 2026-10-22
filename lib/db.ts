@@ -17,7 +17,7 @@ import { normalizePlacePart, normalizeTradeKey } from "@/lib/osm/tags";
  */
 
 export type DbValue = string | number | null;
-export type StoredEmailSource = "osm" | "website";
+export type StoredEmailSource = "osm" | "overture" | "website";
 
 interface Statement {
   sql: string;

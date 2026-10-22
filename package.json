@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "seed": "tsx scripts/seed.ts",
+    "seed:overture": "tsx scripts/seed-overture.ts",
     "seed:turso": "tsx scripts/seed-turso.ts",
     "db:reset": "tsx scripts/reset-db.ts",
     "crawl": "tsx scripts/crawl.ts",

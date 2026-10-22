@@ -26,7 +26,7 @@ export async function GET(request: Request) {
           audience: labelForTradeKey(row.tradeKey),
           location: row.city,
           count: row.total,
-          hint: `${row.total} email${row.total === 1 ? "" : "s"} · ${row.city}`,
+          hint: `${row.total} contact${row.total === 1 ? "" : "s"} · ${row.city}`,
         })),
       });
     }
@@ -47,7 +47,7 @@ export async function GET(request: Request) {
         suggestions: picked.map((row) => ({
           value: row.city,
           label: row.country ? `${row.city}, ${row.country}` : row.city,
-          hint: `${row.total} email${row.total === 1 ? "" : "s"} available`,
+          hint: `${row.total} contact${row.total === 1 ? "" : "s"} available`,
         })),
       });
     }
@@ -65,7 +65,7 @@ export async function GET(request: Request) {
       suggestions: picked.map((row) => ({
         value: labelForTradeKey(row.tradeKey),
         label: labelForTradeKey(row.tradeKey),
-        hint: `${row.total} email${row.total === 1 ? "" : "s"} available`,
+        hint: `${row.total} contact${row.total === 1 ? "" : "s"} available`,
       })),
     });
   } catch {

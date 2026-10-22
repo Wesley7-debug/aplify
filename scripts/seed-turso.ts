@@ -44,7 +44,7 @@ interface LocalRow {
   website: string | null;
   email: string | null;
   email_is_role: number;
-  email_source: "osm" | "website" | null;
+  email_source: "osm" | "overture" | "website" | null;
   email_validated_at: string | null;
   email_validation: string | null;
   confidence: ConfidenceLevel | null;
