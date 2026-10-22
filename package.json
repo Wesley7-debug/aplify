@@ -16,6 +16,7 @@
     "test:acceptance": "node scripts/acceptance.mjs"
   },
   "dependencies": {
+    "@duckdb/node-api": "^2.0.0-r.1",
     "@libsql/client": "^0.18.0",
     "clsx": "^2.1.1",
     "lucide-react": "^1.59.0",
