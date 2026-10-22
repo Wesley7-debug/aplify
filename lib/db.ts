@@ -532,6 +532,8 @@ export interface SearchDbOptions {
   seenIds: string[];
   /** Server-side ids this user has already contacted; removed entirely. */
   excludeIds?: string[];
+  /** Server-side emails this user has already seen; removed entirely. */
+  excludeEmails?: string[];
 }
 
 export async function searchBusinesses(options: SearchDbOptions): Promise<{
@@ -568,6 +570,20 @@ export async function searchBusinesses(options: SearchDbOptions): Promise<{
   if (excluded.length > 0) {
     where.push(`id NOT IN (${excluded.map(() => "?").join(",")})`);
     args.push(...excluded);
+  }
+
+  const excludedEmails = [
+    ...new Set(
+      (options.excludeEmails ?? [])
+        .map((email) => email.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ].slice(0, 500);
+  if (excludedEmails.length > 0) {
+    where.push(
+      `(email IS NULL OR LOWER(email) NOT IN (${excludedEmails.map(() => "?").join(",")}))`,
+    );
+    args.push(...excludedEmails);
   }
 
   const whereSql = where.join(" AND ");
@@ -989,8 +1005,8 @@ export async function normalizeStoredTradeKeys(): Promise<void> {
 }
 
 // ── Per-user state ──────────────────────────────────────────────────────────
-// Users are keyed by their email when they provide one, otherwise by an
-// anonymous httpOnly cookie. Only this key is stored; no search history.
+// Users are keyed by their signed-in email. Only this key is stored; no email
+// message content or search history is recorded.
 
 export interface SeenLead {
   id: string;
@@ -1004,6 +1020,31 @@ export async function getSeenIds(userKey: string, limit = 1_000): Promise<string
     [userKey, Math.max(1, Math.min(limit, 5_000))],
   );
   return rows.map((row) => row.business_id);
+}
+
+export interface SeenExclusions {
+  ids: string[];
+  emails: string[];
+}
+
+/** Both the business ids and the email addresses this user has already seen. */
+export async function getSeenExclusions(
+  userKey: string,
+  limit = 2_000,
+): Promise<SeenExclusions> {
+  await ensureDb();
+  const rows = await db().query<{ business_id: string; email: string | null }>(
+    "SELECT business_id, email FROM seen_businesses WHERE user_key = ? ORDER BY seen_at DESC LIMIT ?",
+    [userKey, Math.max(1, Math.min(limit, 5_000))],
+  );
+  const emails = [
+    ...new Set(
+      rows
+        .map((row) => row.email?.trim().toLowerCase())
+        .filter((email): email is string => Boolean(email)),
+    ),
+  ];
+  return { ids: rows.map((row) => row.business_id), emails };
 }
 
 export async function markSeen(userKey: string, leads: SeenLead[]): Promise<number> {

@@ -1,9 +1,9 @@
 /**
  * Aplify domain types.
  *
- * Every lead is a real business record sourced from OpenStreetMap — a free,
- * openly licensed, citable public dataset. A lead is only returned when the
- * business has a validated public email and no published website.
+ * Every lead is a real business record sourced from OpenStreetMap and Overture
+ * Maps — free, openly licensed public datasets. A lead is only returned when the
+ * business has a validated public email or phone and no published website.
  */
 
 /** How trustworthy the published address looks, based on what we can check. */
@@ -58,10 +58,8 @@ export interface SearchQuery {
   audience: string;
   /** City, region or country. */
   location: string;
-  /** How many contacts to return. Fixed at 10 per search. */
+  /** How many contacts to return. 10 normally, 30 for the configured owner. */
   limit: number;
-  /** Optional email used for the per-user allowance and contacted list. */
-  userEmail?: string;
 }
 
 /** A single location suggestion returned by the geocoder. */
@@ -81,6 +79,7 @@ export type SearchOutcome =
   | "no_businesses_found"
   | "businesses_found_but_no_public_email"
   | "daily_limit"
+  | "auth_required"
   | "rate_limited"
   | "service_error";
 
@@ -123,16 +122,16 @@ export interface SearchResult {
   hint: string | null;
   /** Total businesses with a valid email for this trade/place. */
   total: number;
-  /** Server-computed per-user allowance (guests get 10). */
+  /** Server-computed per-user allowance (10 normally, 30 for the owner). */
   allowance?: {
     limit: number;
     owner: boolean;
     excludedSeen: number;
-    /** Contacts per UTC day; null for the owner/admin. */
-    dailyLimit: number | null;
+    /** Contacts per UTC day for this email. */
+    dailyLimit: number;
     dailyUsed: number;
-    /** Remaining unique contacts today; null for the owner/admin. */
-    dailyRemaining: number | null;
+    /** Remaining unique contacts today. */
+    dailyRemaining: number;
   };
 }
 

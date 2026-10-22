@@ -13,7 +13,7 @@ import type { Lead, RunError, RunStatus, SearchOutcome, SearchQuery, SearchResul
 
 export type QueryFieldErrors = Partial<Record<"audience" | "location", string>>;
 
-const EMPTY_QUERY: SearchQuery = { audience: "", location: "", limit: 10, userEmail: "" };
+const EMPTY_QUERY: SearchQuery = { audience: "", location: "", limit: 10 };
 
 const MAX_SEEN_TOKENS = 600;
 const MAX_SEEN_QUERIES = 40;
@@ -37,7 +37,6 @@ interface DiscoveryContextValue {
   /** Run a suggestion immediately (patches the query too). */
   runQuery: (audience: string, location: string) => Promise<void>;
   loadMore: () => Promise<void>;
-  resetSeen: () => Promise<void>;
   /** Record that the user emailed this business, so it never returns again. */
   markContacted: (lead: Lead) => Promise<void>;
 }
@@ -129,7 +128,6 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
         page: String(page),
       });
       if (seenTokens.length > 0) params.set("seen", seenTokens.join(","));
-      if (requestQuery.userEmail?.trim()) params.set("user", requestQuery.userEmail.trim());
 
       try {
         const response = await fetch(`/api/search?${params.toString()}`, {
@@ -139,6 +137,10 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
 
         if (!response.ok) {
           const data = (await response.json().catch(() => null)) as ApiError | null;
+          if (data?.outcome === "auth_required") {
+            window.location.reload();
+            return;
+          }
           const failure = new Error(
             data?.error?.message ?? "The search could not be completed.",
           ) as Error & { field?: "audience" | "location"; outcome?: SearchOutcome };
@@ -209,7 +211,6 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
         audience: query.audience.trim(),
         location: query.location.trim(),
         limit,
-        userEmail: query.userEmail?.trim() || "",
       };
       const key = queryKey(requestQuery);
       await request({
@@ -241,7 +242,6 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
         audience: audience.trim(),
         location: location.trim(),
         limit: Math.min(Math.max(Math.round(query.limit || 10), 1), 30),
-        userEmail: query.userEmail?.trim() || "",
       };
       patchQuery({ audience: requestQuery.audience, location: requestQuery.location });
       await request({
@@ -252,23 +252,8 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
         key: queryKey(requestQuery),
       });
     },
-    [patchQuery, query.limit, query.userEmail, request, seen],
+    [patchQuery, query.limit, request, seen],
   );
-
-  const resetSeen = useCallback(async () => {
-    const key = queryKey(query);
-    const nextSeen = { ...seen };
-    delete nextSeen[key];
-    setSeen(nextSeen);
-    try {
-      const params = new URLSearchParams();
-      if (query.userEmail?.trim()) params.set("user", query.userEmail.trim());
-      await fetch(`/api/seen?${params.toString()}`, { method: "DELETE" });
-    } catch {
-      // The local list is already cleared; the next search will retry.
-    }
-    await run(nextSeen);
-  }, [query, run, seen, setSeen]);
 
   const markContacted = useCallback(
     async (lead: Lead) => {
@@ -284,7 +269,6 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
           body: JSON.stringify({
             leadId: lead.id,
             email: lead.email ?? undefined,
-            user: query.userEmail?.trim() || undefined,
           }),
         });
       } catch {
@@ -309,7 +293,6 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
       run,
       runQuery,
       loadMore,
-      resetSeen,
       markContacted,
     }),
     [
@@ -326,7 +309,6 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
       run,
       runQuery,
       loadMore,
-      resetSeen,
       markContacted,
     ],
   );

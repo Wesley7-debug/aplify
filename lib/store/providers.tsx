@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { AuthGate } from "@/components/auth/auth-gate";
 import { DiscoveryProvider } from "@/lib/store/discovery";
 import { ToastProvider } from "@/lib/store/toast";
 
@@ -8,7 +9,9 @@ import { ToastProvider } from "@/lib/store/toast";
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <ToastProvider>
-      <DiscoveryProvider>{children}</DiscoveryProvider>
+      <DiscoveryProvider>
+        <AuthGate>{children}</AuthGate>
+      </DiscoveryProvider>
     </ToastProvider>
   );
 }

@@ -2,7 +2,7 @@ import type { Lead } from "@/lib/types";
 
 /**
  * Build the outbound mailto link. Every template carries an opt-out note so
- * recipients can ask to be removed, and the footer explains NDPR/GDPR rights.
+ * recipients can ask to be removed, and the footer includes an opt-out address.
  */
 export function mailtoHref(lead: Pick<Lead, "businessName" | "email">): string {
   if (!lead.email) return "";

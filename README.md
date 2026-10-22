@@ -9,14 +9,15 @@ A result is only returned when the business has:
 - a **validated public email or a published phone number**, and
 - **no published website**.
 
-Searches are answered from the database in milliseconds. Every search returns up
-to **10 contacts**. Non-owner visitors can see **10 unique contacts per UTC day**;
-the allowance is tied to the caller's IP address, so clearing local storage or
-cookies does not reset it. The owner email
+Searches are answered from the database in milliseconds. Visitors must enter an
+email in a blocking modal before they can search; the email is kept in a signed
+httpOnly cookie, never localStorage. Normal emails get **10 fresh contacts per
+UTC day**, while the configured owner email
 (`eugenefidelis573@gmail.com`, configurable with `APLIFY_OWNER_EMAILS`) and
-signed-in admins are exempt from the daily cap. Fetched contacts are saved for
-the IP and shown on `/history`. A business a user contacts is stored in the
-`seen_businesses` table and is never returned to that network again.
+signed-in admins get **30**. Every delivered business is stored in
+`seen_businesses`, so neither the same lead nor the same email address is
+returned again — including on later days. Fetched contacts are saved to the
+email's `/history` page.
 
 ## Quick start
 
@@ -101,18 +102,22 @@ number.
 
 `GET /api/search?audience=hotels&location=Enugu`
 
-Every search returns up to 10 contacts. Optional: `user=owner@example.com` identifies
-the owner for the daily-limit exemption, `seen=id,id` only affects ordering.
-The daily allowance and history are keyed by the caller's IP address.
+Requires the email session cookie set by `/api/auth`. The server returns up to 10
+contacts (30 for the owner/admin email), never more than the remaining daily
+allowance. `seen=id,id` only affects ordering. The daily allowance, history and
+contacted list are keyed by the signed-in email.
 
 `GET /api/suggestions?kind=trade|location|available&q=...` returns database-backed
 typeaheads. When the typed value has no match, the top available options are
 returned instead.
 
-`GET /api/history?days=7` returns the contacts already fetched by this IP.
-`GET /api/allowance?user=owner@example.com` reports whether the search button
-should be enabled. `POST /api/seen` marks a business as contacted;
-`DELETE /api/seen` clears the caller's contacted list. Identity is the request IP.
+`GET /api/auth` returns the current email session. `POST /api/auth` signs in with
+an email (no public password). `DELETE /api/auth` signs out.
+
+`GET /api/history?days=7` returns the contacts already fetched by this email.
+`GET /api/allowance` reports whether the search button should be enabled.
+`POST /api/seen` records a contacted lead. Delivered leads are marked as seen
+automatically and are not recycled.
 
 Other routes: `GET /api/health`, `/api/locations`, and the protected
 `/api/admin/*` routes.
@@ -129,5 +134,5 @@ background.
 Business data © OpenStreetMap contributors (ODbL 1.0) and Overture Maps
 Foundation contributors (CDLA-Permissive 2.0). State assignment uses
 geoBoundaries Nigeria ADM1 boundaries (CC BY 4.0). Emails and phone numbers are
-read from public records, never guessed. The UI includes an opt-out address and
-an NDPR/GDPR notice; every outreach template includes an unsubscribe instruction.
+read from public records, never guessed. The UI includes an opt-out address;
+every outreach template includes an unsubscribe instruction.

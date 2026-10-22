@@ -2,17 +2,22 @@ import { connection, NextRequest, NextResponse } from "next/server";
 import {
   countDailyContacts,
   countRecentSearches,
-  getSeenIds,
+  getSeenExclusions,
+  markSeen,
   recordDailyContacts,
   recordSearchEvent,
 } from "@/lib/db";
 import {
-  ipUserKey,
+  emailUserKey,
   isAdminRequest,
   isOwnerEmail,
-  normalizeUserEmail,
 } from "@/lib/identity";
 import { runSearch } from "@/lib/search";
+import {
+  authenticatedEmail,
+  dailyLimitFor,
+  searchLimitFor,
+} from "@/lib/user-auth";
 
 /**
  * Database-backed search.
@@ -21,17 +26,26 @@ import { runSearch } from "@/lib/search";
  * Overpass fallback here: a slow network call in the request path is exactly
  * what this architecture removes.
  *
- * Every search returns 10 contacts. The public daily allowance is tied to the
- * caller's IP address so it cannot be reset by clearing local storage or
- * cookies. The owner email and signed-in admins are exempt from the daily cap.
+ * The caller must have an email session. Normal users get 10 fresh contacts per
+ * search and per UTC day; the configured owner/admin email gets 30. Delivered
+ * businesses are marked as seen, so the same lead is never shown again.
  */
 
-const GUEST_SEARCHES_PER_MINUTE = 10;
-const DAILY_CONTACT_LIMIT = 10;
-const SEARCH_RESULT_LIMIT = 10;
+const SEARCHES_PER_MINUTE = 10;
 
 export async function GET(request: NextRequest) {
   await connection();
+
+  const email = await authenticatedEmail(request);
+  if (!email) {
+    return NextResponse.json(
+      {
+        error: { message: "Enter your email to continue." },
+        outcome: "auth_required",
+      },
+      { status: 401, headers: { "Cache-Control": "no-store" } },
+    );
+  }
 
   const { searchParams } = new URL(request.url);
   const audience = (searchParams.get("audience") ?? "").trim();
@@ -60,15 +74,16 @@ export async function GET(request: NextRequest) {
     .filter(Boolean)
     .slice(0, 300);
 
-  const userEmail = normalizeUserEmail(searchParams.get("user"));
   const admin = await isAdminRequest(request);
-  const owner = admin || isOwnerEmail(userEmail);
-  const userKey = ipUserKey(request);
+  const owner = admin || isOwnerEmail(email);
+  const userKey = emailUserKey(email);
+  const dailyLimit = dailyLimitFor(owner);
+  const searchLimit = searchLimitFor(owner);
 
   try {
     if (!owner) {
       const recent = await countRecentSearches(userKey, 60);
-      if (recent >= GUEST_SEARCHES_PER_MINUTE) {
+      if (recent >= SEARCHES_PER_MINUTE) {
         return NextResponse.json(
           {
             error: {
@@ -81,23 +96,22 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const dailyUsed = owner ? 0 : await countDailyContacts(userKey);
-    const remainingBefore = owner
-      ? SEARCH_RESULT_LIMIT
-      : Math.max(0, DAILY_CONTACT_LIMIT - dailyUsed);
+    const dailyUsed = await countDailyContacts(userKey);
+    const remainingBefore = Math.max(0, dailyLimit - dailyUsed);
 
-    if (!owner && remainingBefore === 0) {
+    if (remainingBefore === 0) {
       return NextResponse.json(
         {
           error: {
-            message: "You've reached your daily contact limit. View your history or come back tomorrow.",
+            message:
+              "You've reached your daily contact limit. View your history or come back tomorrow.",
           },
           outcome: "daily_limit",
           allowance: {
-            limit: SEARCH_RESULT_LIMIT,
-            owner: false,
+            limit: searchLimit,
+            owner,
             excludedSeen: 0,
-            dailyLimit: DAILY_CONTACT_LIMIT,
+            dailyLimit,
             dailyUsed,
             dailyRemaining: 0,
           },
@@ -107,27 +121,32 @@ export async function GET(request: NextRequest) {
     }
 
     await recordSearchEvent(userKey);
-    const excludeIds = await getSeenIds(userKey);
+    const seenBefore = await getSeenExclusions(userKey);
 
     const result = await runSearch({
       audience,
       location,
-      limit: owner ? SEARCH_RESULT_LIMIT : Math.min(SEARCH_RESULT_LIMIT, remainingBefore),
+      limit: Math.min(searchLimit, remainingBefore),
       page: Number.isFinite(page) ? page : 1,
       seenIds,
-      excludeIds,
-      maxLimit: SEARCH_RESULT_LIMIT,
+      excludeIds: seenBefore.ids,
+      excludeEmails: seenBefore.emails,
+      maxLimit: searchLimit,
     });
 
-    // Record the fetched businesses so they appear on the IP's history page.
+    // Both tables are intentional:
+    // - daily_contacts powers the daily quota and history page.
+    // - seen_businesses permanently withholds delivered leads from future runs.
     const usedAfter = await recordDailyContacts(
       userKey,
       result.leads.map((lead) => lead.id),
     );
-    const remainingAfter = owner
-      ? null
-      : Math.max(0, DAILY_CONTACT_LIMIT - usedAfter);
+    await markSeen(
+      userKey,
+      result.leads.map((lead) => ({ id: lead.id, email: lead.email })),
+    );
 
+    const remainingAfter = Math.max(0, dailyLimit - usedAfter);
     const finalResult =
       remainingAfter === 0
         ? {
@@ -143,11 +162,11 @@ export async function GET(request: NextRequest) {
       {
         ...finalResult,
         allowance: {
-          limit: SEARCH_RESULT_LIMIT,
+          limit: searchLimit,
           owner,
-          excludedSeen: excludeIds.length,
-          dailyLimit: owner ? null : DAILY_CONTACT_LIMIT,
-          dailyUsed: owner ? 0 : usedAfter,
+          excludedSeen: seenBefore.ids.length,
+          dailyLimit,
+          dailyUsed: usedAfter,
           dailyRemaining: remainingAfter,
         },
       },

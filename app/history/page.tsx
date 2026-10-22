@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Clock3, History, Mail, Phone } from "lucide-react";
+import { ChangeEmailButton } from "@/components/auth/change-email-button";
 import { BusinessModal } from "@/components/leads/business-modal";
 import { Card } from "@/components/ui/card";
 import { mailtoHref } from "@/lib/mailto";
@@ -45,8 +46,12 @@ export default function HistoryPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetch("/api/history?days=7", { signal: controller.signal })
+    void fetch("/api/history?days=7", { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
+        if (response.status === 401) {
+          window.location.reload();
+          return [];
+        }
         const data = (await response.json()) as {
           items?: HistoryItem[];
           error?: { message?: string };
@@ -83,7 +88,7 @@ export default function HistoryPage() {
           Contacts you fetched
         </h1>
         <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">
-          Saved for this network for the last 7 days.
+          Saved to your email for the last 7 days.
         </p>
       </section>
 
@@ -189,6 +194,10 @@ export default function HistoryPage() {
         : null}
 
       <BusinessModal lead={selected} onClose={() => setSelected(null)} />
+
+      <footer className="mt-8 text-center text-[11px] text-ink-faint">
+        <ChangeEmailButton />
+      </footer>
     </div>
   );
 }

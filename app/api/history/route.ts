@@ -1,7 +1,8 @@
 import { connection, NextRequest, NextResponse } from "next/server";
 import { listDailyContacts } from "@/lib/db";
-import { ipUserKey } from "@/lib/identity";
+import { emailUserKey } from "@/lib/identity";
 import { leadFromRow } from "@/lib/search";
+import { authenticatedEmail } from "@/lib/user-auth";
 import type { Lead } from "@/lib/types";
 
 export interface HistoryItem {
@@ -10,16 +11,24 @@ export interface HistoryItem {
   lead: Lead;
 }
 
-/** Contacts already fetched by this IP address, newest first. */
+/** Contacts already fetched by this email address, newest first. */
 export async function GET(request: NextRequest) {
   await connection();
+
+  const email = await authenticatedEmail(request);
+  if (!email) {
+    return NextResponse.json(
+      { authenticated: false, error: { message: "Enter your email to continue." } },
+      { status: 401, headers: { "Cache-Control": "no-store" } },
+    );
+  }
 
   const { searchParams } = new URL(request.url);
   const days = Number(searchParams.get("days") ?? "7");
 
   try {
     const rows = await listDailyContacts(
-      ipUserKey(request),
+      emailUserKey(email),
       Number.isFinite(days) ? days : 7,
     );
     const items: HistoryItem[] = [];

@@ -11,6 +11,7 @@ import {
   RotateCcw,
   Search,
 } from "lucide-react";
+import { ChangeEmailButton } from "@/components/auth/change-email-button";
 import { BusinessModal } from "@/components/leads/business-modal";
 import { Combobox, type ComboboxOption } from "@/components/search/combobox";
 import { Button } from "@/components/ui/button";
@@ -22,9 +23,9 @@ import type { Lead } from "@/lib/types";
 interface AllowanceInfo {
   limit: number;
   owner: boolean;
-  dailyLimit: number | null;
+  dailyLimit: number;
   dailyUsed: number;
-  dailyRemaining: number | null;
+  dailyRemaining: number;
 }
 
 function initialsOf(name: string): string {
@@ -44,9 +45,7 @@ export default function HomePage() {
     status,
     result,
     error,
-    seenCount,
     run,
-    resetSeen,
     markContacted,
   } = useDiscovery();
   const [selected, setSelected] = useState<Lead | null>(null);
@@ -59,7 +58,7 @@ export default function HomePage() {
   const running = status === "running";
   const leads = result?.leads ?? [];
   const fieldError = fieldErrors.audience ?? fieldErrors.location;
-  const limitReached = Boolean(allowance && !allowance.owner && allowance.dailyRemaining === 0);
+  const limitReached = Boolean(allowance && allowance.dailyRemaining === 0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -111,14 +110,20 @@ export default function HomePage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    const params = new URLSearchParams();
-    if (query.userEmail?.trim()) params.set("user", query.userEmail.trim());
-    void fetch(`/api/allowance?${params.toString()}`, { signal: controller.signal })
-      .then(async (response) => (await response.json()) as AllowanceInfo)
-      .then((data) => setAllowance(data))
+    void fetch("/api/allowance", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (response.status === 401) {
+          window.location.reload();
+          return null;
+        }
+        return (await response.json()) as AllowanceInfo;
+      })
+      .then((data) => {
+        if (data) setAllowance(data);
+      })
       .catch(() => undefined);
     return () => controller.abort();
-  }, [query.userEmail, status]);
+  }, [status]);
 
   return (
     <div id="main" className="mx-auto w-full max-w-2xl px-4 py-10 sm:py-14">
@@ -176,24 +181,17 @@ export default function HomePage() {
             </Button>
           </div>
 
-          <div className="mt-1 flex flex-wrap items-center justify-between gap-2 border-t border-line px-2 pt-2.5 pb-1 sm:px-3">
-            <label className="flex min-w-0 flex-1 items-center gap-2 text-[12px] text-ink-muted">
-              Owner email
-              <input
-                type="email"
-                value={query.userEmail ?? ""}
-                onChange={(event) => patchQuery({ userEmail: event.target.value })}
-                placeholder="owner@example.com"
-                autoComplete="email"
-                maxLength={254}
-                className="h-8 min-w-0 flex-1 rounded-lg border border-line-strong bg-surface px-2.5 text-[12px] text-ink outline-none placeholder:text-ink-faint focus:border-accent-500 focus:ring-2 focus:ring-accent-100 sm:max-w-56"
-              />
-            </label>
-            {limitReached ? (
-              <span className="text-[11px] font-medium text-danger-600">Daily limit reached</span>
-            ) : null}
-          </div>
         </div>
+
+        {limitReached ? (
+          <p className="mt-2.5 text-center text-[12px] text-ink-muted">
+            Daily limit reached.{" "}
+            <a href="/history" className="font-medium text-accent-700 underline-offset-4 hover:underline">
+              View your history
+            </a>
+            .
+          </p>
+        ) : null}
 
         {fieldError ? (
           <p className="mt-2.5 text-center text-xs text-ink-muted">{fieldError}</p>
@@ -349,26 +347,15 @@ export default function HomePage() {
           ). State boundaries by geoBoundaries (CC BY 4.0).
         </p>
         <p>
-          NDPR / GDPR:{" "}
           <a
             href="mailto:privacy@aplify.app?subject=Remove%20my%20business%20listing"
             className="underline underline-offset-2 hover:text-ink-muted"
           >
             privacy@aplify.app
           </a>{" "}
-          to correct or remove a listing.
-          {seenCount > 0 ? (
-            <>
-              {" · "}
-              <button
-                type="button"
-                onClick={() => void resetSeen()}
-                className="underline underline-offset-2 hover:text-ink-muted"
-              >
-                Reset seen ({seenCount})
-              </button>
-            </>
-          ) : null}
+          to remove a listing.
+          {" · "}
+          <ChangeEmailButton />
         </p>
       </footer>
 

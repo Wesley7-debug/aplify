@@ -1,17 +1,25 @@
 import { connection, NextRequest, NextResponse } from "next/server";
-import { clearSeen, countSeen, markSeen } from "@/lib/db";
-import { ipUserKey } from "@/lib/identity";
+import { countSeen, markSeen } from "@/lib/db";
+import { emailUserKey } from "@/lib/identity";
+import { authenticatedEmail } from "@/lib/user-auth";
 
 /**
- * Mark a business as contacted, or clear the caller's contacted list.
+ * Record that the signed-in user opened a lead's email or phone action.
  *
- * The key is the caller's IP address. Contacted businesses are stored in
- * SQLite/Turso and filtered out of future searches, so the same network is
- * never shown an inbox it has already emailed.
+ * Fetched leads are already marked as seen by /api/search, so this endpoint is
+ * only a confirmation for the current interaction. It never deletes history;
+ * leads are not recycled.
  */
-
 export async function POST(request: NextRequest) {
   await connection();
+
+  const email = await authenticatedEmail(request);
+  if (!email) {
+    return NextResponse.json(
+      { error: { message: "Enter your email to continue." }, outcome: "auth_required" },
+      { status: 401, headers: { "Cache-Control": "no-store" } },
+    );
+  }
 
   let body: { leadId?: unknown; email?: unknown } = {};
   try {
@@ -29,7 +37,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const userKey = ipUserKey(request);
+    const userKey = emailUserKey(email);
     const leadEmail =
       typeof body.email === "string" && body.email.length <= 254
         ? body.email.trim().toLowerCase()
@@ -44,22 +52,6 @@ export async function POST(request: NextRequest) {
     console.error("[seen] database error", cause);
     return NextResponse.json(
       { error: { message: "Could not update your contacted list." } },
-      { status: 500 },
-    );
-  }
-}
-
-export async function DELETE(request: NextRequest) {
-  await connection();
-
-  try {
-    const userKey = ipUserKey(request);
-    const cleared = await clearSeen(userKey);
-    return NextResponse.json({ ok: true, cleared });
-  } catch (cause) {
-    console.error("[seen] database error", cause);
-    return NextResponse.json(
-      { error: { message: "Could not reset your contacted list." } },
       { status: 500 },
     );
   }
