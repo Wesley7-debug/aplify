@@ -82,8 +82,11 @@ export async function GET(request: NextRequest) {
     }
 
     const dailyUsed = owner ? 0 : await countDailyContacts(userKey);
+    const remainingBefore = owner
+      ? SEARCH_RESULT_LIMIT
+      : Math.max(0, DAILY_CONTACT_LIMIT - dailyUsed);
 
-    if (!owner && dailyUsed >= DAILY_CONTACT_LIMIT) {
+    if (!owner && remainingBefore === 0) {
       return NextResponse.json(
         {
           error: {
@@ -109,7 +112,7 @@ export async function GET(request: NextRequest) {
     const result = await runSearch({
       audience,
       location,
-      limit: SEARCH_RESULT_LIMIT,
+      limit: owner ? SEARCH_RESULT_LIMIT : Math.min(SEARCH_RESULT_LIMIT, remainingBefore),
       page: Number.isFinite(page) ? page : 1,
       seenIds,
       excludeIds,
