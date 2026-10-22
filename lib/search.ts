@@ -83,10 +83,8 @@ export interface SearchOptions {
   limit: number;
   page: number;
   seenIds: string[];
-  /** Already-seen ids, filtered out server-side. */
-  excludeIds?: string[];
-  /** Already-seen emails, filtered out server-side. */
-  excludeEmails?: string[];
+  /** Permanent seen list for this email, filtered out inside SQL. */
+  excludeUserKey?: string;
   /** Hard cap for this caller (10 normally, 30 for the owner). */
   maxLimit?: number;
 }
@@ -106,13 +104,6 @@ export async function runSearch(options: SearchOptions): Promise<SearchResult> {
   const seenIds = options.seenIds
     .map((value) => value.trim())
     .filter((value) => value && !value.includes("@"));
-  const excludeIds = (options.excludeIds ?? [])
-    .map((value) => value.trim())
-    .filter((value) => value && !value.includes("@"));
-  const excludeEmails = (options.excludeEmails ?? [])
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
-
   const { rows, total, excluded } = await searchBusinesses({
     tradeKeys,
     location: options.location,
@@ -120,8 +111,7 @@ export async function runSearch(options: SearchOptions): Promise<SearchResult> {
     limit,
     offset,
     seenIds,
-    excludeIds,
-    excludeEmails,
+    excludeUserKey: options.excludeUserKey,
   });
 
   const leads = rows

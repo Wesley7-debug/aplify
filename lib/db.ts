@@ -530,10 +530,8 @@ export interface SearchDbOptions {
   offset: number;
   /** Client-side ids used only to float fresh records to the top. */
   seenIds: string[];
-  /** Server-side ids this user has already contacted; removed entirely. */
-  excludeIds?: string[];
-  /** Server-side emails this user has already seen; removed entirely. */
-  excludeEmails?: string[];
+  /** Permanent per-user seen list; excluded inside SQL without a parameter cap. */
+  excludeUserKey?: string;
 }
 
 export async function searchBusinesses(options: SearchDbOptions): Promise<{
@@ -564,26 +562,20 @@ export async function searchBusinesses(options: SearchDbOptions): Promise<{
     args.push(like, like, like);
   }
 
-  const excluded = [
-    ...new Set((options.excludeIds ?? []).map((id) => id.trim()).filter(Boolean)),
-  ].slice(0, 500);
-  if (excluded.length > 0) {
-    where.push(`id NOT IN (${excluded.map(() => "?").join(",")})`);
-    args.push(...excluded);
-  }
-
-  const excludedEmails = [
-    ...new Set(
-      (options.excludeEmails ?? [])
-        .map((email) => email.trim().toLowerCase())
-        .filter(Boolean),
-    ),
-  ].slice(0, 500);
-  if (excludedEmails.length > 0) {
+  if (options.excludeUserKey) {
+    // Check the permanent seen list inside SQLite/Turso instead of shipping a
+    // capped list of ids and emails with every request.
     where.push(
-      `(email IS NULL OR LOWER(email) NOT IN (${excludedEmails.map(() => "?").join(",")}))`,
+      `NOT EXISTS (
+        SELECT 1 FROM seen_businesses s
+        WHERE s.user_key = ?
+          AND (
+            s.business_id = businesses.id
+            OR (s.email IS NOT NULL AND LOWER(s.email) = LOWER(businesses.email))
+          )
+      )`,
     );
-    args.push(...excludedEmails);
+    args.push(options.excludeUserKey);
   }
 
   const whereSql = where.join(" AND ");
@@ -618,7 +610,7 @@ export async function searchBusinesses(options: SearchDbOptions): Promise<{
     [...args, ...orderArgs],
   );
 
-  return { rows, total, excluded: excluded.length };
+  return { rows, total, excluded: 0 };
 }
 
 export async function countWithEmail(): Promise<number> {
@@ -1011,40 +1003,6 @@ export async function normalizeStoredTradeKeys(): Promise<void> {
 export interface SeenLead {
   id: string;
   email?: string | null;
-}
-
-export async function getSeenIds(userKey: string, limit = 1_000): Promise<string[]> {
-  await ensureDb();
-  const rows = await db().query<{ business_id: string }>(
-    "SELECT business_id FROM seen_businesses WHERE user_key = ? ORDER BY seen_at DESC LIMIT ?",
-    [userKey, Math.max(1, Math.min(limit, 5_000))],
-  );
-  return rows.map((row) => row.business_id);
-}
-
-export interface SeenExclusions {
-  ids: string[];
-  emails: string[];
-}
-
-/** Both the business ids and the email addresses this user has already seen. */
-export async function getSeenExclusions(
-  userKey: string,
-  limit = 2_000,
-): Promise<SeenExclusions> {
-  await ensureDb();
-  const rows = await db().query<{ business_id: string; email: string | null }>(
-    "SELECT business_id, email FROM seen_businesses WHERE user_key = ? ORDER BY seen_at DESC LIMIT ?",
-    [userKey, Math.max(1, Math.min(limit, 5_000))],
-  );
-  const emails = [
-    ...new Set(
-      rows
-        .map((row) => row.email?.trim().toLowerCase())
-        .filter((email): email is string => Boolean(email)),
-    ),
-  ];
-  return { ids: rows.map((row) => row.business_id), emails };
 }
 
 export async function markSeen(userKey: string, leads: SeenLead[]): Promise<number> {

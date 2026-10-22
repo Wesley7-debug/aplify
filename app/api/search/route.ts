@@ -2,7 +2,7 @@ import { connection, NextRequest, NextResponse } from "next/server";
 import {
   countDailyContacts,
   countRecentSearches,
-  getSeenExclusions,
+  countSeen,
   markSeen,
   recordDailyContacts,
   recordSearchEvent,
@@ -121,7 +121,7 @@ export async function GET(request: NextRequest) {
     }
 
     await recordSearchEvent(userKey);
-    const seenBefore = await getSeenExclusions(userKey);
+    const seenTotal = await countSeen(userKey);
 
     const result = await runSearch({
       audience,
@@ -129,8 +129,7 @@ export async function GET(request: NextRequest) {
       limit: Math.min(searchLimit, remainingBefore),
       page: Number.isFinite(page) ? page : 1,
       seenIds,
-      excludeIds: seenBefore.ids,
-      excludeEmails: seenBefore.emails,
+      excludeUserKey: userKey,
       maxLimit: searchLimit,
     });
 
@@ -147,16 +146,25 @@ export async function GET(request: NextRequest) {
     );
 
     const remainingAfter = Math.max(0, dailyLimit - usedAfter);
+    const freshMessage =
+      result.leads.length === 0 && seenTotal > 0
+        ? "No fresh leads left for this search. Try a different trade or location."
+        : result.message;
+    const baseResult = {
+      ...result,
+      message: freshMessage,
+      hint: result.leads.length === 0 && seenTotal > 0 ? freshMessage : result.hint,
+    };
     const finalResult =
       remainingAfter === 0
         ? {
-            ...result,
+            ...baseResult,
             hasMore: false,
             exhausted: true,
             message: "Daily limit reached. View your history or come back tomorrow.",
             hint: "Daily limit reached. View your history or come back tomorrow.",
           }
-        : result;
+        : baseResult;
 
     return NextResponse.json(
       {
@@ -164,7 +172,7 @@ export async function GET(request: NextRequest) {
         allowance: {
           limit: searchLimit,
           owner,
-          excludedSeen: seenBefore.ids.length,
+          excludedSeen: seenTotal,
           dailyLimit,
           dailyUsed: usedAfter,
           dailyRemaining: remainingAfter,
