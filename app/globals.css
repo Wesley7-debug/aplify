@@ -1,26 +1,193 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/*
+ * Aplify design tokens
+ * Light canvas, neutral borders, dark typography, restrained purple accent.
+ */
+@theme {
+  --font-sans: var(--font-sora), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
+    monospace;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  /* Surfaces */
+  --color-canvas: #f3f5fa;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f8faff;
+  --color-surface-sunken: #eef1f7;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  /* Borders */
+  --color-line: #e6eaf2;
+  --color-line-strong: #d7deeb;
+
+  /* Typography */
+  --color-ink: #16181d;
+  --color-ink-soft: #3b4763;
+  --color-ink-muted: #5b6472;
+  --color-ink-faint: #8a94a8;
+
+  /* Accent (confident blue) */
+  --color-accent-50: #f0f5ff;
+  --color-accent-100: #e4ecfd;
+  --color-accent-200: #c9d9fb;
+  --color-accent-300: #9bb8f5;
+  --color-accent-400: #6b93ee;
+  --color-accent-500: #3f6fe0;
+  --color-accent-600: #275ece;
+  --color-accent-700: #1f4aa6;
+  --color-accent-800: #1a3d87;
+
+  /* Status */
+  --color-positive-50: #eefbf4;
+  --color-positive-100: #d5f5e5;
+  --color-positive-600: #0d8f61;
+  --color-positive-700: #0a6b49;
+  --color-caution-50: #fff9ec;
+  --color-caution-100: #fdeecd;
+  --color-caution-600: #b9750a;
+  --color-caution-700: #8f5a08;
+  --color-danger-50: #fef3f2;
+  --color-danger-100: #fde3e1;
+  --color-danger-600: #ce3a34;
+  --color-danger-700: #a52e29;
+  --color-info-50: #f0f6ff;
+  --color-info-600: #2563c9;
+  --color-info-700: #1e4fa3;
+
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1.125rem;
+
+  --shadow-card: 0 1px 2px 0 rgb(20 20 26 / 0.04);
+  --shadow-raised: 0 1px 3px 0 rgb(20 20 26 / 0.06),
+    0 12px 28px -18px rgb(20 20 26 / 0.24);
+  --shadow-overlay: 0 24px 64px -24px rgb(20 20 26 / 0.32),
+    0 2px 8px -2px rgb(20 20 26 / 0.08);
+
+  --animate-fade-in: fade-in 0.28s ease-out both;
+  --animate-rise: rise 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-slide-in: slide-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-shimmer: shimmer 1.7s ease-in-out infinite;
+  --animate-spin-slow: spin 1.4s linear infinite;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slide-in {
+    from {
+      opacity: 0;
+      transform: translateX(24px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes shimmer {
+    0% {
+      opacity: 0.55;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0.55;
+    }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  :root {
+    color-scheme: light;
+    --aplify-ring: color-mix(in oklab, var(--color-accent-600) 42%, transparent);
+  }
+
+  * {
+    border-color: var(--color-line);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    text-rendering: optimizeLegibility;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--aplify-ring);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: var(--color-accent-100);
+    color: var(--color-accent-800);
+  }
+
+  ::placeholder {
+    color: var(--color-ink-faint);
+  }
+}
+
+/* Slim, unobtrusive scrollbars for internal scroll regions. */
+@utility scroll-slim {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+
+  &::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--color-line-strong);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 9999px;
+  }
+}
+
+/* Dotted grid used behind the marketing-style headers. */
+@utility bg-grid {
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    var(--color-line-strong) 1px,
+    transparent 0
+  );
+  background-size: 22px 22px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
